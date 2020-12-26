@@ -78,21 +78,9 @@ def init_game():
 
     # Makes the window appear (turned on by default)
     game.set_window_visible(True)
-
-    # Enables information about all objects present in the current episode/level.
-    game.set_objects_info_enabled(True)
-
-    # Enables information about all sectors (map layout).
-    game.set_sectors_info_enabled(True)
-
     
-    # Turns on the sound. (turned off by default)
-    # game.set_sound_enabled(True)
-    # Because of some problems with OpenAL on Ubuntu 20.04, we keep this line commented,
-    # the sound is only useful for humans watching the game.
-
 	# Sets the living reward (for each move) to -1
-    game.set_living_reward(-1)
+    #game.set_living_reward(-1)
 
     # Sets ViZDoom mode (PLAYER, ASYNC_PLAYER, SPECTATOR, ASYNC_SPECTATOR, PLAYER mode is default)
     game.set_mode(vzd.Mode.PLAYER)
