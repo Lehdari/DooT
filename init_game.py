@@ -21,22 +21,22 @@ def init_game():
     game.set_screen_resolution(vzd.ScreenResolution.RES_320X240)
 
     # Sets the screen buffer format. Not used here but now you can change it. Default is CRCGCB.
-    game.set_screen_format(vzd.ScreenFormat.RGB24)
-
+    #game.set_screen_format(vzd.ScreenFormat.RGB24)
+    game.set_screen_format(vzd.ScreenFormat.GRAY8)
     # Enables depth buffer.
-    game.set_depth_buffer_enabled(True)
+    game.set_depth_buffer_enabled(False)
 
     # Enables labeling of in game objects labeling.
-    game.set_labels_buffer_enabled(True)
+    game.set_labels_buffer_enabled(False)
 
     # Enables buffer with top down map of the current episode/level.
-    game.set_automap_buffer_enabled(True)
+    game.set_automap_buffer_enabled(False)
 
     # Enables information about all objects present in the current episode/level.
-    game.set_objects_info_enabled(True)
+    game.set_objects_info_enabled(False)
 
     # Enables information about all sectors (map layout).
-    game.set_sectors_info_enabled(True)
+    game.set_sectors_info_enabled(False)
 
     # Sets other rendering options (all of these options except crosshair are enabled (set to True) by default)
     game.set_render_hud(True)

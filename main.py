@@ -40,19 +40,13 @@ def main():
     model = Model(reward_controller)
 
     for i in range(episodes):
-        #if i % 50 == 0:
-        #    print("Episode #" + str(i + 1))
-
         game.new_episode()
         rewards = []
-
         while not game.is_episode_finished():
             state = game.get_state()
             state_number = state.number
-            screen_buf = state.screen_buffer
 
             reward = model.step(game)
-
             rewards.append(reward)
 
             #reward = game.make_action(model.predict_action(np.expand_dims(screen_buf,0)))
@@ -73,9 +67,7 @@ def main():
             #    sleep(sleep_time)
 
         
-        # Check how the episode went.
         print("Episode", i, "finished in", )
-        #print("Total reward:", game.get_total_reward())
         print("Total reward:", sum(rewards))
         print("************************")
 

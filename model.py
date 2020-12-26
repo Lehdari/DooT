@@ -10,7 +10,8 @@ import random
 class Model:
 	def __init__(self, reward):
 		self.initializer = initializers.RandomNormal(stddev=0.04)
-		self.create_model()
+		self.create_model(1)
+
 		self.reward = reward
 		self.memory = deque(maxlen=2000)
 		self.gamma = 0.85
@@ -18,10 +19,10 @@ class Model:
 		self.epsilon_min = 0.01
 		self.epsilon_decay = 0.995
 		self.learning_rate = 0.005
-		self.tau = .125
+		#self.tau = .125 Double DQN param, used later
 
-	def create_model(self):
-		inputs = keras.Input(shape=(240, 320, 3))
+	def create_model(self, n_channels):
+		inputs = keras.Input(shape=(240, 320, n_channels))
 		x = layers.Conv2D(16, (3, 3), padding="same", kernel_initializer=self.initializer,
 			activation="relu")(inputs)
 		x = layers.Conv2D(32, (3, 3), padding="same", kernel_initializer=self.initializer,
@@ -102,7 +103,16 @@ class Model:
 	"""
 	def step(self, game):
 		state = game.get_state()
+
+		#TODO: stack frames
 		screen_buf = state.screen_buffer
+
+		"""
+		Epsilon-greedy algorithm
+		With probability epsilon choose a random action ("explore")
+		With probability 1-epsilon choose best known action ("exploit")
+		"""
+
 		action = self.predict_action(np.expand_dims(screen_buf,0))
 
 		self.epsilon *= self.epsilon_decay
@@ -110,7 +120,10 @@ class Model:
 		if np.random.random() < self.epsilon:
 			action = self.get_random_action()
 
+		# Intentionally ignore the reward the game gives
 		game.make_action(action)
 
+		# Instead, use our own reward system
 		reward = self.reward.get_reward(game)
 		return reward
+		
