@@ -18,6 +18,7 @@ from random import choice
 from time import sleep
 
 from init_game import init_game
+import reward
 
 if __name__ == "__main__":
     game = init_game()
@@ -57,9 +58,6 @@ if __name__ == "__main__":
             objects = state.objects
             sectors = state.sectors
 
-            # Games variables can be also accessed via:
-            #game.get_game_variable(GameVariable.AMMO2)
-
             # Makes a random action and get remember reward.
             r = game.make_action(choice(actions))
 
@@ -76,6 +74,8 @@ if __name__ == "__main__":
             print("State #" + str(n))
             print("Game variables:", vars)
             print("Reward:", r)
+            r2 = reward.get_reward(game)
+            print("Reward2:", r2)
             print("=====================")
 
             if sleep_time > 0:
