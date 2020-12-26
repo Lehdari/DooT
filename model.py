@@ -4,11 +4,21 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import initializers
 
+from collections import deque
+import random
 
 class Model:
-	def __init__(self):
+	def __init__(self, reward):
 		self.initializer = initializers.RandomNormal(stddev=0.04)
 		self.create_model()
+		self.reward = reward
+		self.memory = deque(maxlen=2000)
+		self.gamma = 0.85
+		self.epsilon = 1.0
+		self.epsilon_min = 0.01
+		self.epsilon_decay = 0.995
+		self.learning_rate = 0.005
+		self.tau = .125
 
 	def create_model(self):
 		inputs = keras.Input(shape=(240, 320, 3))
@@ -65,9 +75,42 @@ class Model:
 	def train_batch(self, x, y):
 		self.model.train_on_batch(x, y)
 
+	"""
+	return: list length of 15: 14 booleans and 1 float
+	"""
 	def predict_action(self, x):
 		prediction = self.model.predict(x)[0]
 		action = np.where(prediction > 0.0, True, False).tolist()
 		action[14] = prediction[14]*100.0
-		#print(action)
 		return action
+
+	"""
+	return: list length of 15: 14 booleans and 1 float
+	"""
+	def get_random_action(self):
+		random_action = random.choices([True, False], k=14)
+		random_action.append(random.uniform(-100.0, 100.0))
+		return random_action
+
+	"""
+	Perform one step;
+	- create action
+	- get reward
+	- update game state (happens in make_action under the hood)
+
+	return: reward (1D float)
+	"""
+	def step(self, game):
+		state = game.get_state()
+		screen_buf = state.screen_buffer
+		action = self.predict_action(np.expand_dims(screen_buf,0))
+
+		self.epsilon *= self.epsilon_decay
+		self.epsilon = max(self.epsilon_min, self.epsilon)
+		if np.random.random() < self.epsilon:
+			action = self.get_random_action()
+
+		game.make_action(action)
+
+		reward = self.reward.get_reward(game)
+		return reward

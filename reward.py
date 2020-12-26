@@ -1,39 +1,19 @@
 import vizdoom as vzd
-
-#import matplotlib.pyplot as plt
 import numpy as np
+import utils
 
-"""
-Hardcoded start pos of first level
-"""
-def get_start_pos():
-    return np.array((-96.0, 784.78125, 56.0))
+class Reward():
+    def __init__(self, player_start_pos):
+        self.player_start_pos = player_start_pos
+    
+    def get_sector_crossing_reward(self):
+        return 0.0 # TODO
 
-"""
-ret: (x,y,z)
-"""
-def get_player_pos(game):
-    return np.array((game.get_game_variable(vzd.POSITION_X),
-    game.get_game_variable(vzd.POSITION_Y),
-    game.get_game_variable(vzd.POSITION_Z)))
+    def get_reward(self, game):
+        start_dist_reward = utils.get_player_dist_from_start(game, self.player_start_pos)
+        living_reward = -1.0
 
-def print_state_sectors(game):
-    state = game.get_state()
-    for s in state.sectors:
-        print("Sector lines:", [(l.x1, l.y1, l.x2, l.y2, l.is_blocking) for l in s.lines])
+        sector_crossing_reward = self.get_sector_crossing_reward() # TODO
 
-def print_state_objects(game):
-    state = game.get_state()
-    for o in state.objects:
-        print("Object id:", o.id, "object name:", o.name)
-        print("Object position: x:", o.position_x, ", y:", o.position_y, ", z:", o.position_z)
 
-def get_player_dist_from_start(game):
-    player = get_player_pos(game)
-    start_point = get_start_pos()
-    return np.linalg.norm(player-start_point)
-
-def get_reward(game):
-    startdist_reward = get_player_dist_from_start(game)
-
-    return startdist_reward
+        return start_dist_reward + living_reward + sector_crossing_reward
