@@ -13,21 +13,18 @@
 
 from __future__ import print_function
 import vizdoom as vzd
+import numpy as np
 
 from random import choice
 from time import sleep
 
 from init_game import init_game
 import reward
+from model import Model
+
 
 if __name__ == "__main__":
     game = init_game()
-
-    # Define some actions. Each list entry corresponds to declared buttons:
-    # MOVE_LEFT, MOVE_RIGHT, ATTACK
-    # game.get_available_buttons_size() can be used to check the number of available buttons.
-    # 5 more combinations are naturally possible but only 3 are included for transparency when watching.
-    actions = [[True, False, False], [False, True, False], [False, False, True]]
 
     # Run this many episodes
     episodes = 10
@@ -41,6 +38,9 @@ if __name__ == "__main__":
 
         # Starts a new episode. It is not needed right after init() but it doesn't cost much. At least the loop is nicer.
         game.new_episode()
+
+        # New model for each episode
+        model = Model()
 
         while not game.is_episode_finished():
 
@@ -59,7 +59,7 @@ if __name__ == "__main__":
             sectors = state.sectors
 
             # Makes a random action and get remember reward.
-            r = game.make_action(choice(actions))
+            r = game.make_action(model.predict_action(np.expand_dims(screen_buf,0)))
 
             # Makes a "prolonged" action and skip frames:
             # skiprate = 4
