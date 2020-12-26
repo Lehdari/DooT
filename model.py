@@ -19,7 +19,6 @@ class Model:
 		self.epsilon_min = 0.01
 		self.epsilon_decay = 0.995
 		self.learning_rate = 0.005
-		#self.tau = .125 Double DQN param, used later
 
 	def create_model(self, n_channels):
 		inputs = keras.Input(shape=(240, 320, n_channels))
@@ -125,5 +124,40 @@ class Model:
 
 		# Instead, use our own reward system
 		reward = self.reward.get_reward(game)
+
+		done = game.is_episode_finished()
+		bufu = None
+		if not done:
+			bufu = game.get_state().screen_buffer
+		self.remember(screen_buf, action, reward, bufu, done)
+
+		#self.replay()
+
 		return reward
-		
+
+
+	"""
+	Add entry to memory
+	"""	
+	def remember(self, state, action, reward, new_state, done):
+		self.memory.append([state, action, reward, new_state, done])
+
+	def replay(self):
+		batch_size = 32
+		if len(self.memory) < batch_size: 
+			return
+
+		samples = random.sample(self.memory, batch_size)
+		for sample in samples:
+			state, action, reward, new_state, done = sample
+			target = self.model.predict(state)
+			if done:
+				target[0][action] = reward
+			else:
+				# Maximum q-value for s'
+				Q_future = max(self.model.predict(new_state)[0])
+				target[0][action] = reward + Q_future * self.gamma
+			self.model.fit(state, target, epochs=1, verbose=0)
+
+	def save_model(self, filename):
+		self.model.save(filename)

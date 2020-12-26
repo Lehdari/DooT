@@ -22,10 +22,12 @@ from init_game import init_game
 from reward import Reward
 from model import Model
 import utils
+import matplotlib.pyplot as plt
+
 
 def main():
     game = init_game()
-    episodes = 10
+    episodes = 1000
 
     # Sets time that will pause the engine after each action (in seconds)
     # Without this everything would go too fast for you to keep track of what's happening.
@@ -39,37 +41,47 @@ def main():
     reward_controller = Reward(player_start_pos)
     model = Model(reward_controller)
 
+    episode_mean_rewards = []
+
     for i in range(episodes):
         game.new_episode()
-        rewards = []
+        rewards_current_episode = []
         while not game.is_episode_finished():
             state = game.get_state()
             state_number = state.number
 
             reward = model.step(game)
-            rewards.append(reward)
-
-            #reward = game.make_action(model.predict_action(np.expand_dims(screen_buf,0)))
-
-            # state, reward, done = env.step(action)
-            # remember cur state, action, reward, new state, done
-            # replay
-            # iterate target model
+            rewards_current_episode.append(reward)           
             
-            if state_number % 50 == 0:
-                print("State #" + str(state_number))
-                print("Reward:", reward)
+            #if state_number % 50 == 0:
+                #print("State #" + str(state_number))
+                #print("Reward:", reward)
                 #print("=====================")
-                print()
+                #print()
 
             # disable sleep unless a human wants to watch the game
             #if sleep_time > 0:
             #    sleep(sleep_time)
 
         
-        print("Episode", i, "finished in", )
-        print("Total reward:", sum(rewards))
-        print("************************")
+        #print("Episode", i, "finished in", )
+        #print("Total reward:", sum(rewards))
+        #print("************************")
+
+        # compress all the rewards of an episode into a single number
+        episode_mean_rewards.append(np.mean(rewards_current_episode))
+
+        """
+        if i % 5 == 0:
+            plt.plot(episode_mean_rewards)
+            plt.xlabel("Episode")
+            plt.ylabel("Reward")
+            plt.show()
+        """
+
+        if i % 10 == 0:
+            print("i:", i, "max mean reward", max(episode_mean_rewards), "last mean reward", episode_mean_rewards[i])
+            model.save_model("my_model.h5")
 
     # It will be done automatically anyway but sometimes you need to do it in the middle of the program...
     game.close()
