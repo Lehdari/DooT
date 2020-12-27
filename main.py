@@ -67,7 +67,7 @@ def main():
 
         
         print("Episode", i, "finished in", )
-        print("Total reward:", sum(rewards))
+        print("Total rewards:", sum(rewards_current_episode))
         print("************************")
 
         # compress all the rewards of an episode into a single number
