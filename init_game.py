@@ -70,18 +70,15 @@ def init_game():
     # Adds game variables that will be included in state.
     game.add_available_game_variable(vzd.GameVariable.AMMO2)
 
-    # Causes episodes to finish after 200 tics (actions)
-    game.set_episode_timeout(200)
+    # How many ticks the episode is at maximum
+    game.set_episode_timeout(500)
 
-    # Makes episodes start after 10 tics (~after raising the weapon)
-    game.set_episode_start_time(10)
+    # Makes episodes start after 14 tics (~after raising the weapon)
+    game.set_episode_start_time(14)
 
     # Makes the window appear (turned on by default)
     game.set_window_visible(False)
     
-	# Sets the living reward (for each move) to -1
-    #game.set_living_reward(-1)
-
     # Sets ViZDoom mode (PLAYER, ASYNC_PLAYER, SPECTATOR, ASYNC_SPECTATOR, PLAYER mode is default)
     game.set_mode(vzd.Mode.PLAYER)
 
