@@ -16,12 +16,22 @@ class Model:
 		self.create_state_model(3)
 		self.create_action_model()
 
+		# combine the state and action models into one model and compile it
+		action_outputs = self.action_model(self.state_outputs_state)
+		self.combined_model = keras.Model(
+			inputs=[self.state_inputs_image, self.state_inputs_state, self.state_inputs_action],
+			outputs=action_outputs)
+		self.combined_model.compile(
+			loss="mean_squared_error",
+			optimizer=keras.optimizers.SGD()
+		)
+
 	def create_state_model(self, n_channels):
-		inputs_image = keras.Input(shape=(240, 320, n_channels))
-		inputs_state = keras.Input(shape=(self.state_size))
-		inputs_action = keras.Input(shape=(15))
+		self.state_inputs_image = keras.Input(shape=(240, 320, n_channels))
+		self.state_inputs_state = keras.Input(shape=(self.state_size))
+		self.state_inputs_action = keras.Input(shape=(15))
 		x = layers.Conv2D(16, (3, 3), padding="same", kernel_initializer=self.initializer,
-			activation="relu")(inputs_image)
+			activation="relu")(self.state_inputs_image)
 		x = layers.Conv2D(32, (3, 3), padding="same", kernel_initializer=self.initializer,
 			strides=(2,2), activation="relu")(x) #120x160
 		x = layers.Conv2D(32, (3, 3), padding="same", kernel_initializer=self.initializer,
@@ -60,7 +70,7 @@ class Model:
 			activation="relu")(x)
 		x = layers.BatchNormalization(axis=-1)(x)
 		x = layers.Flatten()(x)
-		x = layers.concatenate([x, inputs_state, inputs_action])
+		x = layers.concatenate([x, self.state_inputs_state, self.state_inputs_action])
 		x = layers.Dense(512,  kernel_initializer=self.initializer, activation="relu")(x)
 		x = layers.BatchNormalization(axis=-1)(x)
 		x = layers.Dense(512,  kernel_initializer=self.initializer, activation="relu")(x)
@@ -71,35 +81,38 @@ class Model:
 			activation="relu")(x)
 		x = layers.BatchNormalization(axis=-1)(x)
 		# linear activation in state output
-		outputs_state = layers.Dense(self.state_size,  kernel_initializer=self.initializer)(x)
+		self.state_outputs_state =\
+			layers.Dense(self.state_size,  kernel_initializer=self.initializer)(x)
 
 		self.state_model = keras.Model(
-			inputs=[inputs_image, inputs_state, inputs_action],
-			outputs=outputs_state)
+			inputs=[self.state_inputs_image, self.state_inputs_state, self.state_inputs_action],
+			outputs=self.state_outputs_state)
 		self.state_model.summary()
 
-		self.state_model.compile(
-			loss="mean_squared_error",
-			optimizer=keras.optimizers.Adam()
-		)
+		# self.state_model.compile(
+		# 	loss="mean_squared_error",
+		# 	optimizer=keras.optimizers.SGD()
+		# )
 
 	def create_action_model(self):
-		inputs_state = keras.Input(shape=(self.state_size))
-		x = layers.Dense(512, kernel_initializer=self.initializer, activation="relu")(inputs_state)
+		self.action_inputs_state = keras.Input(shape=(self.state_size))
+		x = layers.Dense(512, kernel_initializer=self.initializer, activation="relu")\
+			(self.action_inputs_state)
 		x = layers.BatchNormalization(axis=-1)(x)
 		x = layers.Dense(256, kernel_initializer=self.initializer, activation="relu")(x)
 		x = layers.BatchNormalization(axis=-1)(x)
 		x = layers.Dense(128, kernel_initializer=self.initializer, activation="relu")(x)
 		x = layers.BatchNormalization(axis=-1)(x)
-		outputs_action = layers.Dense(15, kernel_initializer=self.initializer, activation="tanh")(x)
+		self.action_outputs_action = layers.Dense(15, kernel_initializer=self.initializer, activation="tanh")(x)
 
-		self.action_model = keras.Model(inputs=inputs_state, outputs=outputs_action)
+		self.action_model = keras.Model(inputs=self.action_inputs_state,
+			outputs=self.action_outputs_action)
 		self.action_model.summary()
 
-		self.action_model.compile(
-			loss="mean_squared_error",
-			optimizer=keras.optimizers.Adam()
-		)
+		# self.action_model.compile(
+		# 	loss="mean_squared_error",
+		# 	optimizer=keras.optimizers.SGD()
+		# )
 
 	def advance(self, frame, action):
 		# convert action into continuous domain so it can be passed to action model
@@ -135,6 +148,18 @@ class Model:
 		random_action = random.choices([True, False], k=14)
 		random_action.append(random.gauss(0, 25.0))
 		return random_action
+
+	def train(self, frames_in, states_in, actions_in, actions_out):
+		frames_in = np.asarray(frames_in)
+		states_in = np.asarray(states_in)
+		actions_in = np.asarray(actions_in)
+		actions_out = np.asarray(actions_out)
+		# print("frames_in.shape: {}".format(frames_in.shape))
+		# print("states_in.shape: {}".format(states_in.shape))
+		# print("actions_in.shape: {}".format(actions_in.shape))
+		# print("actions_out.shape: {}".format(actions_out.shape))
+
+		self.combined_model.fit(x=[frames_in, states_in, actions_in], y=actions_out, batch_size=8)
 
 	def save_model(self, filename):
 		self.model.save(filename)
