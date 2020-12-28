@@ -21,8 +21,8 @@ def init_game():
     game.set_screen_resolution(vzd.ScreenResolution.RES_320X240)
 
     # Sets the screen buffer format. Not used here but now you can change it. Default is CRCGCB.
-    #game.set_screen_format(vzd.ScreenFormat.RGB24)
-    game.set_screen_format(vzd.ScreenFormat.GRAY8)
+    game.set_screen_format(vzd.ScreenFormat.RGB24)
+    #game.set_screen_format(vzd.ScreenFormat.GRAY8)
     # Enables depth buffer.
     game.set_depth_buffer_enabled(False)
 
@@ -77,7 +77,7 @@ def init_game():
     game.set_episode_start_time(14)
 
     # Makes the window appear (turned on by default)
-    game.set_window_visible(False)
+    game.set_window_visible(True)
     
     # Sets ViZDoom mode (PLAYER, ASYNC_PLAYER, SPECTATOR, ASYNC_SPECTATOR, PLAYER mode is default)
     game.set_mode(vzd.Mode.PLAYER)

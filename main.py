@@ -39,7 +39,7 @@ def main():
     print("Player start pos:", player_start_pos)
 
     reward_controller = Reward(player_start_pos)
-    model = Model(reward_controller)
+    model = Model()
 
     episode_mean_rewards = []
 
@@ -49,29 +49,35 @@ def main():
     for i in range(episodes):
         game.new_episode()
         rewards_current_episode = []
+
         while not game.is_episode_finished():
             state = game.get_state()
             state_number = state.number
 
-            reward = model.step(game)
-            rewards_current_episode.append(reward)           
+            action = model.predict_action()
+            print("action: {}".format(action))
+            model.advance(state.screen_buffer, action)
+            game.make_action(action)
+
+            #reward = model.step(game)
+            #rewards_current_episode.append(reward)           
             
-            if state_number % 50 == 0:
-                print("State #" + str(state_number))
-                print("Reward:", reward)
-                print("=====================")
+            # if state_number % 50 == 0:
+            #     print("State #" + str(state_number))
+            #     print("Reward:", reward)
+            #     print("=====================")
 
             # disable sleep unless a human wants to watch the game
-            #if sleep_time > 0:
-            #    sleep(sleep_time)
+            if sleep_time > 0:
+                sleep(sleep_time)
 
         
         print("Episode", i, "finished in", )
-        print("Total rewards:", sum(rewards_current_episode))
-        print("************************")
+        #print("Total rewards:", sum(rewards_current_episode))
+        #print("************************")
 
         # compress all the rewards of an episode into a single number
-        episode_mean_rewards.append(np.mean(rewards_current_episode))
+        #episode_mean_rewards.append(np.mean(rewards_current_episode))
 
         """
         if i % 5 == 0:
@@ -81,8 +87,8 @@ def main():
             plt.show()
         """
 
-        print("i:", i, "max mean reward", max(episode_mean_rewards), "last mean reward", episode_mean_rewards[i])
-        model.save_model("my_model.h5")
+        #print("i:", i, "max mean reward", max(episode_mean_rewards), "last mean reward", episode_mean_rewards[i])
+        #model.save_model("my_model.h5")
 
     # It will be done automatically anyway but sometimes you need to do it in the middle of the program...
     game.close()
