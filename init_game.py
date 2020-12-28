@@ -76,6 +76,9 @@ def init_game():
     # Makes episodes start after 14 tics (~after raising the weapon)
     game.set_episode_start_time(14)
 
+    # Set game ticrate
+    game.set_ticrate(60)
+
     # Makes the window appear (turned on by default)
     game.set_window_visible(True)
     
