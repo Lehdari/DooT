@@ -21,6 +21,7 @@ from time import sleep
 from init_game import init_game
 from reward import Reward
 from model import Model
+from trainer import Trainer
 import utils
 import matplotlib.pyplot as plt
 
@@ -40,10 +41,10 @@ def main():
 
     reward_controller = Reward(player_start_pos)
     model = Model()
+    trainer = Trainer(model, reward_controller)
 
     episode_mean_rewards = []
 
-    print()
     print("Model setup complete. Starting training episodes")
 
     for i in range(episodes):
@@ -51,13 +52,16 @@ def main():
         rewards_current_episode = []
 
         while not game.is_episode_finished():
-            state = game.get_state()
-            state_number = state.number
+            trainer.step(game, i)
 
-            action = model.predict_action()
-            print("action: {}".format(action))
-            model.advance(state.screen_buffer, action)
-            game.make_action(action)
+            # state = game.get_state()
+            # state_number = state.number
+
+            # action = model.predict_action()
+            # print("action: {}".format(action))
+            # model.advance(state.screen_buffer, action)
+            # game.make_action(action)
+
 
             #reward = model.step(game)
             #rewards_current_episode.append(reward)           
@@ -68,8 +72,8 @@ def main():
             #     print("=====================")
 
             # disable sleep unless a human wants to watch the game
-            if sleep_time > 0:
-                sleep(sleep_time)
+            #if sleep_time > 0:
+            #    sleep(sleep_time)
 
         
         print("Episode", i, "finished in", )
