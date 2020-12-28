@@ -2,8 +2,52 @@ from reward import Reward
 from model import Model
 import numpy as np
 import tensorflow as tf
-from collections import deque
 import random
+
+
+class MemoryEntry:
+	"""
+	Create memory entry
+	frame_in:	Input frame
+	state_in:	Input state (previous state)
+	action_in:	Input action (action taken previously)
+	action_out:	Output action (action taken to advance game state)
+	reward:		Reward given after game state has been advanced using action_out
+	"""
+	def __init__(self, frame_in, state_in, action_in, action_out, reward):
+		self.frame_in = frame_in
+		self.state_in = state_in
+		self.action_in = action_in
+		self.action_out = action_out
+		self.reward = reward
+		self.disc_reward = reward # discounted reward
+
+
+class MemorySequence:
+	def __init__(self, discount_factor=0.95):
+		self.sequence = []
+		self.discount_factor = discount_factor
+
+	def add_entry(self, frame_in, state_in, action_in, action_out, reward):
+		self.sequence.append(MemoryEntry(
+			frame_in, state_in, action_in, action_out, reward))
+
+	def discount(self):
+		# iterate the sequence backwards to pass discounted rewards to previous entries
+		# print("Entry {:3d}: r: {:10.5f} dr: {:10.5f}".format(len(self.sequence)-1,
+		# 	self.sequence[-1].reward, self.sequence[-1].disc_reward))
+		for i in range(len(self.sequence)-2, -1, -1):
+			self.sequence[i].disc_reward =\
+				self.discount_factor*self.sequence[i+1].disc_reward +\
+				(1.0-self.discount_factor)*self.sequence[i].reward
+
+			# print("Entry {:3d}: r: {:10.5f} dr: {:10.5f}".format(i, self.sequence[i].reward,
+			# 	self.sequence[i].disc_reward))
+
+	def get_best_entries(self, n_entries):
+		# sort according to discounted reward
+		seq_sorted = sorted(self.sequence, key=lambda entry: entry.disc_reward)
+		return seq_sorted[-n_entries:]
 
 
 class Trainer:
@@ -11,14 +55,16 @@ class Trainer:
 		self.model = model
 		self.reward = reward
 
-		self.memory = deque(maxlen=2000)
+		self.memory = [] # list of sequences
+		self.replay_episode_interval = 2 # experience replay interval in episodes
 		self.gamma = 0.85
 		self.epsilon = 1.0
 		self.epsilon_min = 0.01
-		self.epsilon_decay = 0.995
+		self.epsilon_decay = 0.9999
 		self.learning_rate = 0.005
 
 		self.action_prev = np.zeros((15,))
+		self.episode_id_prev = -1
 
 	"""
 	Perform one step;
@@ -26,9 +72,15 @@ class Trainer:
 	- get reward
 	- update game state (happens in make_action under the hood)
 
-	return: reward (1D float)
+	game:		ViZDoom game object
+	episode_id:	Id of the currently running episode
+	return: 	reward (1D float)
 	"""
-	def step(self, game):
+	def step(self, game, episode_id):
+		if episode_id != self.episode_id_prev:
+			self.memory.append(MemorySequence())
+			self.episode_id_prev = episode_id
+
 		state_game = game.get_state()
 
 		#TODO: stack frames
@@ -45,6 +97,7 @@ class Trainer:
 		# With probability 1-epsilon choose best known action ("exploit")
 		self.epsilon *= self.epsilon_decay
 		self.epsilon = max(self.epsilon_min, self.epsilon)
+		#print("epsilon: {}".format(self.epsilon)) # TODO remove
 		if np.random.random() < self.epsilon:
 			action = self.model.get_random_action() # make random action
 		else:
@@ -56,12 +109,40 @@ class Trainer:
 		# Instead, use our own reward system
 		reward = self.reward.get_reward(game)
 
+		# Save the step into active(last in the list) memory sequence
+		self.memory[-1].add_entry(screen_buf, state_prev, self.action_prev, action, reward)
+
 		# save the action taken for next step
 		self.action_prev = action.copy()
 
-		print("reward: {}".format(reward))
+		# print("reward: {}".format(reward)) # TODO remove
 
-		# done = game.is_episode_finished()
+		done = game.is_episode_finished()
+		if done:
+			print("Episode {} finished".format(episode_id))
+			if (episode_id+1) % self.replay_episode_interval == 0:
+				print("================================================================================")
+				print("Experience replay interval reached, training...")
+
+				# gather best entries from the memory
+				frames_in = []
+				states_in = []
+				actions_in = []
+				actions_out = []
+				for sequence in self.memory:
+					sequence.discount()
+					best = sequence.get_best_entries(32)
+					for e in best:
+						frames_in.append(e.frame_in)
+						states_in.append(e.state_in)
+						actions_in.append(e.action_in)
+						actions_out.append(e.action_out)
+
+				# train
+				self.model.train(frames_in, states_in, actions_in, actions_out)
+
+				# clear memory
+				self.memory = []
 		# bufu = None
 		# if not done:
 		# 	bufu = game.get_state().screen_buffer
@@ -69,14 +150,6 @@ class Trainer:
 
 		#self.replay()
 
-		return reward
-
-
-	"""
-	Add entry to memory
-	"""	
-	def remember(self, state, action, reward, new_state, done):
-		self.memory.append([state, action, reward, new_state, done])
 
 	def replay(self):
 		batch_size = 32
