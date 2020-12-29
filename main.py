@@ -28,11 +28,11 @@ import matplotlib.pyplot as plt
 
 def main():
     game = init_game()
-    episodes = 1000
+    episodes = 1024
 
     # Sets time that will pause the engine after each action (in seconds)
     # Without this everything would go too fast for you to keep track of what's happening.
-    sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
+    #sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
 
     game.new_episode()
 
@@ -76,7 +76,7 @@ def main():
             #    sleep(sleep_time)
 
         
-        print("Episode", i, "finished in", )
+        #print("Episode", i, "finished in", )
         #print("Total rewards:", sum(rewards_current_episode))
         #print("************************")
 
@@ -92,7 +92,8 @@ def main():
         """
 
         #print("i:", i, "max mean reward", max(episode_mean_rewards), "last mean reward", episode_mean_rewards[i])
-        #model.save_model("my_model.h5")
+        if (i+1 % 8) == 0:
+            model.save_model("model_state.h5", "model_action.h5")
 
     # It will be done automatically anyway but sometimes you need to do it in the middle of the program...
     game.close()
