@@ -42,7 +42,7 @@ class MemorySequence:
 		for i in range(len(self.sequence)-2, -1, -1):
 			self.sequence[i].disc_reward =\
 				self.discount_factor*self.sequence[i+1].disc_reward +\
-				(1.0-self.discount_factor)*self.sequence[i].reward
+				self.sequence[i].reward
 
 			# print("Entry {:3d}: r: {:10.5f} dr: {:10.5f}".format(i, self.sequence[i].reward,
 			# 	self.sequence[i].disc_reward))
