@@ -116,7 +116,10 @@ class Trainer:
 		self.epsilon = max(self.epsilon_min, self.epsilon)
 		#print("epsilon: {}".format(self.epsilon)) # TODO remove
 		if np.random.random() < self.epsilon:
-			action = self.model.get_random_action() # make random action
+			if self.reward_delta > 0.0 and np.random.random() > 0.5:
+				action = self.action_prev # use previous action if reward rate is increasing
+			else:
+				action = self.model.get_random_action()
 		else:
 			action = self.model.predict_action() # make action predicted from model state
 
@@ -125,7 +128,20 @@ class Trainer:
 
 		# Instead, use our own reward system
 		reward = self.reward.get_reward(game)
+		# update cumulative reward and reward delta
 		self.reward_cum += reward;
+		# slight lowpass filter on reward delta to smooth out the spikes
+		self.reward_delta = 0.1*(reward - self.reward_prev) + 0.9*self.reward_delta
+		self.reward_prev = reward
+
+		# TODO temp
+		action_print = np.where(action, 1, 0)
+		print("{} {:8.3f} {:8.3f} {:8.3f}".format(
+			action_print[0:14], action[14], reward, self.reward_delta), end="\r")
+		# print("{} {:8.3f} {:8.3f} {:8.3f}".format(
+		# 	action_print[0:14], action[14], self.reward_cum, self.reward.get_distance(game)), end="\r")
+		# TODO end of temp
+
 
 		# Save the step into active(last in the list) memory sequence
 		self.memory[-1].add_entry(screen_buf, state_prev, self.action_prev, action, reward)
