@@ -3,6 +3,7 @@ from model import Model
 import numpy as np
 import tensorflow as tf
 import random
+from utils import *
 
 
 class MemoryEntry:
@@ -17,8 +18,9 @@ class MemoryEntry:
 	def __init__(self, frame_in, state_in, action_in, action_out, reward):
 		self.frame_in = frame_in
 		self.state_in = state_in
-		self.action_in = action_in
-		self.action_out = action_out
+		# convert actions into continuous domain
+		self.action_in = convert_action_to_continuous(action_in)
+		self.action_out = convert_action_to_continuous(action_out)
 		self.reward = reward
 		self.disc_reward = reward # discounted reward
 
@@ -27,6 +29,7 @@ class MemorySequence:
 	def __init__(self, discount_factor=0.95):
 		self.sequence = []
 		self.discount_factor = discount_factor
+		self.reward_cum = 0.0 # cumulative reward, assigned in the end of episode
 
 	def add_entry(self, frame_in, state_in, action_in, action_out, reward):
 		self.sequence.append(MemoryEntry(
@@ -56,15 +59,18 @@ class Trainer:
 		self.reward = reward
 
 		self.memory = [] # list of sequences
-		self.replay_episode_interval = 2 # experience replay interval in episodes
+		self.replay_episode_interval = 8 # experience replay interval in episodes
+		self.replay_n_sequences = 4 # use this many best sequences in experience replay
+		self.replay_n_entries = 64 # number of entries per seq. to use in exp. replay
 		self.gamma = 0.85
 		self.epsilon = 1.0
 		self.epsilon_min = 0.01
-		self.epsilon_decay = 0.9999
+		self.epsilon_decay = 0.99999
 		self.learning_rate = 0.005
 
 		self.action_prev = np.zeros((15,))
 		self.episode_id_prev = -1
+		self.reward_cum = 0.0 # cumulative reward
 
 	"""
 	Perform one step;
@@ -108,6 +114,7 @@ class Trainer:
 
 		# Instead, use our own reward system
 		reward = self.reward.get_reward(game)
+		self.reward_cum += reward;
 
 		# Save the step into active(last in the list) memory sequence
 		self.memory[-1].add_entry(screen_buf, state_prev, self.action_prev, action, reward)
@@ -119,7 +126,17 @@ class Trainer:
 
 		done = game.is_episode_finished()
 		if done:
-			print("Episode {} finished".format(episode_id))
+			print("Episode {} finished, cumulative reward: {:10.5f}, epsilon: {:10.5f}"
+				.format(episode_id, self.reward_cum, self.epsilon))
+			# save the cumulative reward to the sequence
+			self.memory[-1].reward_cum = self.reward_cum
+			self.reward_cum = 0.0
+
+			# reset stuff for the new episode
+			self.action_prev = np.zeros((15,))
+			self.reward.reset()
+			self.model.reset_state()
+
 			if (episode_id+1) % self.replay_episode_interval == 0:
 				print("================================================================================")
 				print("Experience replay interval reached, training...")
@@ -129,9 +146,13 @@ class Trainer:
 				states_in = []
 				actions_in = []
 				actions_out = []
-				for sequence in self.memory:
+
+				# use self.replay_n_sequences best sequences
+				self.memory.sort(key=lambda sequence: sequence.reward_cum)
+				for sequence in self.memory[-self.replay_n_sequences:]:
+					print(sequence.reward_cum)
 					sequence.discount()
-					best = sequence.get_best_entries(32)
+					best = sequence.get_best_entries(self.replay_n_entries)
 					for e in best:
 						frames_in.append(e.frame_in)
 						states_in.append(e.state_in)
@@ -143,27 +164,3 @@ class Trainer:
 
 				# clear memory
 				self.memory = []
-		# bufu = None
-		# if not done:
-		# 	bufu = game.get_state().screen_buffer
-		# self.remember(screen_buf, action, reward, bufu, done)
-
-		#self.replay()
-
-
-	def replay(self):
-		batch_size = 32
-		if len(self.memory) < batch_size: 
-			return
-
-		samples = random.sample(self.memory, batch_size)
-		for sample in samples:
-			state, action, reward, new_state, done = sample
-			target = self.model.predict(state)
-			if done:
-				target[0][action] = reward
-			else:
-				# Maximum q-value for s'
-				Q_future = max(self.model.predict(new_state)[0])
-				target[0][action] = reward + Q_future * self.gamma
-			self.model.fit(state, target, epochs=1, verbose=0)
