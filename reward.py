@@ -27,3 +27,6 @@ class Reward():
 
 
         return start_dist_reward + living_reward + sector_crossing_reward
+    
+    def get_distance(self, game):
+        return np.linalg.norm(get_player_pos(game) - self.player_start_pos)
