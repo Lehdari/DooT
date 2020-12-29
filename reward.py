@@ -7,6 +7,10 @@ class Reward():
         self.player_start_pos = player_start_pos
         self.dist_start_prev = 0.0
     
+    # reset the reward system state (after an episode)
+    def reset(self):
+        self.dist_start_prev = 0.0
+    
     def get_sector_crossing_reward(self):
         return 0.0 # TODO
 
