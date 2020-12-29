@@ -43,3 +43,11 @@ def convert_action_to_continuous(action_mixed):
     action_cont = np.where(action_mixed, 1.0, -1.0)
     action_cont[14] = action_mixed[14] / 10.0
     return action_cont
+
+"""
+get null (mixed) action
+"""
+def get_null_action():
+    action = np.zeros((15,), dtype=bool).tolist()
+    action[14] = 0.0
+    return action
