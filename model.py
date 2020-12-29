@@ -4,6 +4,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import initializers
 import random
+from utils import *
 
 
 class Model:
@@ -23,7 +24,7 @@ class Model:
 			outputs=action_outputs)
 		self.combined_model.compile(
 			loss="mean_squared_error",
-			optimizer=keras.optimizers.SGD()
+			optimizer=keras.optimizers.SGD(learning_rate=0.001, momentum=0.1)
 		)
 
 	def create_state_model(self, n_channels):
@@ -81,8 +82,8 @@ class Model:
 			activation="relu")(x)
 		x = layers.BatchNormalization(axis=-1)(x)
 		# linear activation in state output
-		self.state_outputs_state =\
-			layers.Dense(self.state_size,  kernel_initializer=self.initializer)(x)
+		x = layers.Dense(self.state_size,  kernel_initializer=self.initializer)(x)
+		self.state_outputs_state = layers.BatchNormalization(axis=-1)(x)
 
 		self.state_model = keras.Model(
 			inputs=[self.state_inputs_image, self.state_inputs_state, self.state_inputs_action],
@@ -116,19 +117,23 @@ class Model:
 
 	def advance(self, frame, action):
 		# convert action into continuous domain so it can be passed to action model
-		action_cont = np.where(action, 1.0, -1.0)
-		action_cont[14] = action[14]
+		action = convert_action_to_continuous(action)
 
 		# TODO TEMP
 		#frame = np.zeros_like(frame)
 		#self.state = np.zeros_like(self.state)
-		#action_cont = np.zeros_like(action_cont)
+		#action = np.zeros_like(action)
 		
 		self.state = self.state_model.predict([
 			np.expand_dims(frame, 0),
 			np.expand_dims(self.state, 0),
-			np.expand_dims(action_cont, 0)])[0]
+			np.expand_dims(action, 0)])[0]
 
+	"""
+	Reset state (after an episode)
+	"""
+	def reset_state(self):
+		self.state = np.zeros((self.state_size,))
 
 	"""
 	Predict action from the state of the model
@@ -136,17 +141,15 @@ class Model:
 	"""
 	def predict_action(self):
 		#print("state: {}".format(self.state)) # TODO REMOVE
-		prediction = self.action_model.predict(np.expand_dims(self.state,0))[0]
-		action = np.where(prediction > 0.0, True, False).tolist()
-		action[14] = prediction[14]*100.0
-		return action
+		action = self.action_model.predict(np.expand_dims(self.state,0))[0]
+		return convert_action_to_mixed(action)
 
 	"""
 	return: list length of 15: 14 booleans and 1 float
 	"""
 	def get_random_action(self):
 		random_action = random.choices([True, False], k=14)
-		random_action.append(random.gauss(0, 25.0))
+		random_action.append(random.gauss(0, 3.3))
 		return random_action
 
 	def train(self, frames_in, states_in, actions_in, actions_out):
@@ -154,12 +157,14 @@ class Model:
 		states_in = np.asarray(states_in)
 		actions_in = np.asarray(actions_in)
 		actions_out = np.asarray(actions_out)
-		# print("frames_in.shape: {}".format(frames_in.shape))
-		# print("states_in.shape: {}".format(states_in.shape))
-		# print("actions_in.shape: {}".format(actions_in.shape))
-		# print("actions_out.shape: {}".format(actions_out.shape))
+		print("frames_in.shape: {}".format(frames_in.shape))
+		print("states_in.shape: {}".format(states_in.shape))
+		print("actions_in.shape: {}".format(actions_in.shape))
+		print("actions_out.shape: {}".format(actions_out.shape))
 
-		self.combined_model.fit(x=[frames_in, states_in, actions_in], y=actions_out, batch_size=8)
+		self.combined_model.fit(x=[frames_in, states_in, actions_in], y=actions_out,
+			batch_size=32, epochs=8, shuffle=True)
 
-	def save_model(self, filename):
-		self.model.save(filename)
+	def save_model(self, state_model_filename, action_model_filename):
+		self.state_model.save(state_model_filename)
+		self.action_model.save(action_model_filename)
