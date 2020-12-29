@@ -68,9 +68,20 @@ class Trainer:
 		self.epsilon_decay = 0.99999
 		self.learning_rate = 0.005
 
-		self.action_prev = np.zeros((15,))
 		self.episode_id_prev = -1
+		self.episode_reset()
+	
+	"""
+	Reset after an episode
+	"""
+	def episode_reset(self):
+		self.reward.reset()
+		self.model.reset_state()
+		self.action_prev = get_null_action()
+
 		self.reward_cum = 0.0 # cumulative reward
+		self.reward_prev = 0.0 # previous reward
+		self.reward_delta = 0.0 # reward change in most recent step
 
 	"""
 	Perform one step;
@@ -130,12 +141,9 @@ class Trainer:
 				.format(episode_id, self.reward_cum, self.epsilon))
 			# save the cumulative reward to the sequence
 			self.memory[-1].reward_cum = self.reward_cum
-			self.reward_cum = 0.0
 
 			# reset stuff for the new episode
-			self.action_prev = np.zeros((15,))
-			self.reward.reset()
-			self.model.reset_state()
+			self.episode_reset()
 
 			if (episode_id+1) % self.replay_episode_interval == 0:
 				print("================================================================================")
