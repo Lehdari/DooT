@@ -60,8 +60,8 @@ class Trainer:
 
 		self.memory = [] # list of sequences
 		self.replay_episode_interval = 8 # experience replay interval in episodes
-		self.replay_n_sequences = 4 # use this many best sequences in experience replay
-		self.replay_n_entries = 64 # number of entries per seq. to use in exp. replay
+		self.replay_n_entries_min = 16 # number of entries used for training from worst sequence
+		self.replay_n_entries_delta = 16 # number of entries to increase for better sequences
 		self.gamma = 0.85
 		self.epsilon = 1.0
 		self.epsilon_min = 0.01
@@ -157,15 +157,17 @@ class Trainer:
 
 				# use self.replay_n_sequences best sequences
 				self.memory.sort(key=lambda sequence: sequence.reward_cum)
-				for sequence in self.memory[-self.replay_n_sequences:]:
-					print(sequence.reward_cum)
+				n_entries = self.replay_n_entries_min
+				for sequence in self.memory:
+					print("{:10.5f} {}".format(sequence.reward_cum, n_entries))
 					sequence.discount()
-					best = sequence.get_best_entries(self.replay_n_entries)
+					best = sequence.get_best_entries(n_entries)
 					for e in best:
 						frames_in.append(e.frame_in)
 						states_in.append(e.state_in)
 						actions_in.append(e.action_in)
 						actions_out.append(e.action_out)
+					n_entries += self.replay_n_entries_delta
 
 				# train
 				self.model.train(frames_in, states_in, actions_in, actions_out)
