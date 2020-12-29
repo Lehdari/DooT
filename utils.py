@@ -27,3 +27,19 @@ def print_state_objects(game):
     for o in state.objects:
         print("Object id:", o.id, "object name:", o.name)
         print("Object position: x:", o.position_x, ", y:", o.position_y, ", z:", o.position_z)
+
+"""
+convert action to mixed domain (the one to be passed to game)
+"""
+def convert_action_to_mixed(action_cont):
+    action_mixed = np.where(action_cont > 0.0, True, False).tolist()
+    action_mixed[14] = action_cont[14]*10.0
+    return action_mixed
+
+"""
+convert action to continuous domain
+"""
+def convert_action_to_continuous(action_mixed):
+    action_cont = np.where(action_mixed, 1.0, -1.0)
+    action_cont[14] = action_mixed[14] / 10.0
+    return action_cont
