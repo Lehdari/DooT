@@ -65,19 +65,19 @@ def init_game():
     game.add_available_button(vzd.Button.SELECT_WEAPON5)
     game.add_available_button(vzd.Button.SELECT_WEAPON6)
     game.add_available_button(vzd.Button.SELECT_WEAPON7)
-    game.add_available_button(vzd.Button.TURN_LEFT_RIGHT_DELTA, 100)
+    game.add_available_button(vzd.Button.TURN_LEFT_RIGHT_DELTA, 10)
 
     # Adds game variables that will be included in state.
     game.add_available_game_variable(vzd.GameVariable.AMMO2)
 
     # How many ticks the episode is at maximum
-    game.set_episode_timeout(500)
+    game.set_episode_timeout(512)
 
     # Makes episodes start after 14 tics (~after raising the weapon)
     game.set_episode_start_time(14)
 
     # Set game ticrate
-    game.set_ticrate(60)
+    game.set_ticrate(480)
 
     # Makes the window appear (turned on by default)
     game.set_window_visible(True)
