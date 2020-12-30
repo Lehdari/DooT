@@ -5,28 +5,179 @@ from utils import *
 class Reward():
     def __init__(self, player_start_pos):
         self.player_start_pos = player_start_pos
-        self.dist_start_prev = 0.0
+
+        # exploration
+        self.exploration_tile_size = 32.0
+        self.exploration_tile_init = 4.0
+        self.exploration_decay_rate = 0.03
+        self.exploration_tiles = {}
+
+        self.reset()
+
     
     # reset the reward system state (after an episode)
     def reset(self):
         self.dist_start_prev = 0.0
-    
-    def get_sector_crossing_reward(self):
-        return 0.0 # TODO
 
-    def get_reward(self, game):
+        # items
+        self.weapon0_prev = -1
+        self.weapon1_prev = -1
+        self.weapon2_prev = -1
+        self.weapon3_prev = -1
+        self.weapon4_prev = -1
+        self.weapon5_prev = -1
+        self.weapon6_prev = -1
+        self.ammo2_prev = -1
+        
+        # combat
+        self.health_prev = -1.0
+        self.armor_prev = -1.0
+        self.damage_prev = -1.0
+
+        self.velocity = 0.0
+    
+    def reset_exploration(self):
+        self.exploration_tiles = {}
+    
+    def get_velocity_reward(self, game):
+        vx = game.get_game_variable(vzd.VELOCITY_X)
+        vy = game.get_game_variable(vzd.VELOCITY_Y)
+        # some low pass filter to smooth out jitter
+        self.velocity = 0.1 * self.velocity + 0.9 * np.sqrt(vx*vx + vy*vy)
+        return self.velocity
+    
+    def get_item_reward(self, game):
+        weapon0 = game.get_game_variable(vzd.WEAPON0)
+        weapon1 = game.get_game_variable(vzd.WEAPON1)
+        weapon2 = game.get_game_variable(vzd.WEAPON2)
+        weapon3 = game.get_game_variable(vzd.WEAPON3)
+        weapon4 = game.get_game_variable(vzd.WEAPON4)
+        weapon5 = game.get_game_variable(vzd.WEAPON5)
+        weapon6 = game.get_game_variable(vzd.WEAPON6)
+        ammo2 = game.get_game_variable(vzd.AMMO2)
+
+        if self.weapon0_prev < 0:
+            self.weapon0_prev = weapon0
+        if self.weapon1_prev < 0:
+            self.weapon1_prev = weapon1
+        if self.weapon2_prev < 0:
+            self.weapon2_prev = weapon2
+        if self.weapon3_prev < 0:
+            self.weapon3_prev = weapon3
+        if self.weapon4_prev < 0:
+            self.weapon4_prev = weapon4
+        if self.weapon5_prev < 0:
+            self.weapon5_prev = weapon5
+        if self.weapon6_prev < 0:
+            self.weapon6_prev = weapon6
+        if self.ammo2_prev < 0:
+            self.ammo2_prev = ammo2
+        
+        weapon_reward = weapon0 - self.weapon0_prev
+        weapon_reward += weapon1 - self.weapon1_prev
+        weapon_reward += weapon2 - self.weapon2_prev
+        weapon_reward += weapon3 - self.weapon3_prev
+        weapon_reward += weapon4 - self.weapon4_prev
+        weapon_reward += weapon5 - self.weapon5_prev
+        weapon_reward += weapon6 - self.weapon6_prev
+
+        if weapon_reward > 0:
+            print("weapon_reward: {}".format(weapon_reward))
+
+        ammo_reward = ammo2 - self.ammo2_prev
+        
+        self.ammo2_prev = ammo2
+
+        self.weapon0_prev = weapon0
+        self.weapon1_prev = weapon1
+        self.weapon2_prev = weapon2
+        self.weapon3_prev = weapon3
+        self.weapon4_prev = weapon4
+        self.weapon5_prev = weapon5
+        self.weapon6_prev = weapon6
+
+        return ammo_reward + weapon_reward * 2048.0
+
+    def get_combat_reward(self, game):
+        health = game.get_game_variable(vzd.HEALTH)
+        armor = game.get_game_variable(vzd.ARMOR)
+        damage = game.get_game_variable(vzd.DAMAGECOUNT)
+
+        if self.health_prev < 0:
+            self.health_prev = health
+        if self.armor_prev < 0:
+            self.armor_prev = armor
+        if self.damage_prev < 0:
+            self.damage_prev = damage
+        
+        damage_reward = damage - self.damage_prev
+        health_reward = health - self.health_prev
+        armor_reward = armor - self.armor_prev
+
+        # if damage_reward != 0:
+        #     print("damage_reward: {}".format(damage_reward))
+        # if health_reward != 0:
+        #     print("health_reward: {}".format(health_reward))
+        # if armor_reward != 0:
+        #     print("armor_reward: {}".format(armor_reward))
+        
+        self.damage_prev = damage
+        self.health_prev = health
+        self.armor_prev = armor
+
+        return 5.0*damage_reward + health_reward + armor_reward
+
+    def get_exploration_reward(self, player_pos):
+        tile_x = int(player_pos[0] / self.exploration_tile_size)
+        tile_y = int(player_pos[1] / self.exploration_tile_size)
+        tile_id = (tile_x, tile_y)
+        if tile_id in self.exploration_tiles:
+            # tile-wise reward decay
+            self.exploration_tiles[tile_id] = self.exploration_tiles[tile_id]*\
+                (1.0-self.exploration_decay_rate) - self.exploration_decay_rate
+        else:
+            self.exploration_tiles[tile_id] = self.exploration_tile_init
+        
+        self.exploration_tiles[tile_id]
+
+        # print("x: {:8.3f} y: {:8.3f} tile: {} value: {}".format(
+        #      player_pos[0], player_pos[1], tile_id, self.exploration_tiles[tile_id]))
+        
+        return self.exploration_tiles[tile_id]
+    
+    def get_start_distance_reward(self, player_pos):
     	# current distance from starting point
-        dist_start = np.linalg.norm(get_player_pos(game) - self.player_start_pos)
+        dist_start = np.linalg.norm(player_pos - self.player_start_pos)
         # starting distance reward given according to dis. delta
         start_dist_reward = dist_start - self.dist_start_prev
         self.dist_start_prev = dist_start
+        return start_dist_reward
+    
+    def get_misc_reward(self, game):
+        return game.get_game_variable(vzd.ATTACK_READY) - 1.0
 
-        living_reward = -1.0
+    def get_reward(self, game):
+        player_pos = get_player_pos(game)
 
-        sector_crossing_reward = self.get_sector_crossing_reward() # TODO
+        living_reward = 0.0
 
+        velocity_reward = self.get_velocity_reward(game)
+        #print("velocity_reward: {}".format(velocity_reward))
 
-        return start_dist_reward + living_reward + sector_crossing_reward
+        start_dist_reward = self.get_start_distance_reward(player_pos)
+        #print("start_dist_reward: {}".format(start_dist_reward))
+
+        exploration_reward = self.get_exploration_reward(player_pos)
+
+        item_reward = self.get_item_reward(game)
+
+        combat_reward = self.get_combat_reward(game)
+
+        misc_reward = self.get_misc_reward(game)
+        #print(misc_reward)
+
+        return living_reward + 0.3*velocity_reward + 0.01*start_dist_reward + exploration_reward +\
+            item_reward + 10 * combat_reward + misc_reward
     
     def get_distance(self, game):
         return np.linalg.norm(get_player_pos(game) - self.player_start_pos)

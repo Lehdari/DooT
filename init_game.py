@@ -68,7 +68,22 @@ def init_game():
     game.add_available_button(vzd.Button.TURN_LEFT_RIGHT_DELTA, 10)
 
     # Adds game variables that will be included in state.
+    game.add_available_game_variable(vzd.GameVariable.WEAPON0)
+    game.add_available_game_variable(vzd.GameVariable.WEAPON1)
+    game.add_available_game_variable(vzd.GameVariable.WEAPON2)
+    game.add_available_game_variable(vzd.GameVariable.WEAPON3)
+    game.add_available_game_variable(vzd.GameVariable.WEAPON4)
+    game.add_available_game_variable(vzd.GameVariable.WEAPON5)
+    game.add_available_game_variable(vzd.GameVariable.WEAPON6)
     game.add_available_game_variable(vzd.GameVariable.AMMO2)
+
+    game.add_available_game_variable(vzd.GameVariable.HEALTH)
+    game.add_available_game_variable(vzd.GameVariable.ARMOR)
+    game.add_available_game_variable(vzd.GameVariable.DAMAGECOUNT)
+
+    game.add_available_game_variable(vzd.GameVariable.VELOCITY_X)
+    game.add_available_game_variable(vzd.GameVariable.VELOCITY_Y)
+    game.add_available_game_variable(vzd.GameVariable.ATTACK_READY)
 
     # How many ticks the episode is at maximum
     game.set_episode_timeout(512)
@@ -84,6 +99,8 @@ def init_game():
 
     # Enables engine output to console.
     #game.set_console_enabled(True)
+
+    game.set_death_penalty(2084)
 
     # Initialize the game. Further configuration won't take any effect from now on.
     game.init()

@@ -124,10 +124,11 @@ class Trainer:
 			action = self.model.predict_action() # make action predicted from model state
 
 		# Intentionally ignore the reward the game gives
-		game.make_action(action)
+		reward = game.make_action(action)
+		#print("game reward: {}".format(reward))
 
 		# Instead, use our own reward system
-		reward = self.reward.get_reward(game)
+		reward += self.reward.get_reward(game)
 		# update cumulative reward and reward delta
 		self.reward_cum += reward;
 		# slight lowpass filter on reward delta to smooth out the spikes
@@ -160,6 +161,8 @@ class Trainer:
 
 			# reset stuff for the new episode
 			self.episode_reset()
+			
+			self.reward.reset_exploration()
 
 			if (episode_id+1) % self.replay_episode_interval == 0:
 				print("================================================================================")
