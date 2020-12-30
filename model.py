@@ -3,6 +3,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import initializers
+from tensorflow.keras import activations
 import random
 from utils import *
 
@@ -24,15 +25,18 @@ class Model:
 			outputs=action_outputs)
 		self.combined_model.compile(
 			loss="mean_squared_error",
-			optimizer=keras.optimizers.SGD(learning_rate=0.001, momentum=0.1)
+			optimizer=keras.optimizers.SGD(learning_rate=0.001, momentum=0.05)
 		)
 
 	def create_state_model(self, n_channels):
 		self.state_inputs_image = keras.Input(shape=(240, 320, n_channels))
 		self.state_inputs_state = keras.Input(shape=(self.state_size))
 		self.state_inputs_action = keras.Input(shape=(15))
+
+		# image input branch
 		x = layers.Conv2D(16, (3, 3), padding="same", kernel_initializer=self.initializer,
 			activation="relu")(self.state_inputs_image)
+		x = layers.BatchNormalization(axis=-1)(x)
 		x = layers.Conv2D(32, (3, 3), padding="same", kernel_initializer=self.initializer,
 			strides=(2,2), activation="relu")(x) #120x160
 		x = layers.Conv2D(32, (3, 3), padding="same", kernel_initializer=self.initializer,
@@ -71,49 +75,50 @@ class Model:
 			activation="relu")(x)
 		x = layers.BatchNormalization(axis=-1)(x)
 		x = layers.Flatten()(x)
+
+		# concatenate with other inputs
 		x = layers.concatenate([x, self.state_inputs_state, self.state_inputs_action])
-		x = layers.Dense(512,  kernel_initializer=self.initializer, activation="relu")(x)
+		x = layers.Dense(1024,  kernel_initializer=self.initializer)(x)
+		x = activations.relu(x, alpha=0.01) # use leaky relu to allow for oscillation
 		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(512,  kernel_initializer=self.initializer, activation="relu")(x)
+		x = layers.Dense(512,  kernel_initializer=self.initializer)(x)
+		x = activations.relu(x, alpha=0.01)
 		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(256,  kernel_initializer=self.initializer, activation="relu")(x)
+		x = layers.Dense(256,  kernel_initializer=self.initializer)(x)
+		x = activations.relu(x, alpha=0.01)
 		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(self.state_size*2,  kernel_initializer=self.initializer,
-			activation="relu")(x)
+		x = layers.Dense(self.state_size*2,  kernel_initializer=self.initializer)(x)
+		x = activations.relu(x, alpha=0.01)
 		x = layers.BatchNormalization(axis=-1)(x)
 		# linear activation in state output
-		x = layers.Dense(self.state_size,  kernel_initializer=self.initializer)(x)
-		self.state_outputs_state = layers.BatchNormalization(axis=-1)(x)
+		self.state_outputs_state =\
+			layers.Dense(self.state_size,  kernel_initializer=self.initializer)(x)
 
 		self.state_model = keras.Model(
 			inputs=[self.state_inputs_image, self.state_inputs_state, self.state_inputs_action],
 			outputs=self.state_outputs_state)
 		self.state_model.summary()
 
-		# self.state_model.compile(
-		# 	loss="mean_squared_error",
-		# 	optimizer=keras.optimizers.SGD()
-		# )
-
 	def create_action_model(self):
 		self.action_inputs_state = keras.Input(shape=(self.state_size))
-		x = layers.Dense(512, kernel_initializer=self.initializer, activation="relu")\
-			(self.action_inputs_state)
+		x = layers.Dense(512, kernel_initializer=self.initializer)(self.action_inputs_state)
+		x = activations.relu(x, alpha=0.01) # use leaky relu to allow for oscillation
 		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(256, kernel_initializer=self.initializer, activation="relu")(x)
+		x = layers.Dense(256, kernel_initializer=self.initializer)(x)
+		x = activations.relu(x, alpha=0.01)
 		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(128, kernel_initializer=self.initializer, activation="relu")(x)
+		x = layers.Dense(128, kernel_initializer=self.initializer)(x)
+		x = activations.relu(x, alpha=0.01)
 		x = layers.BatchNormalization(axis=-1)(x)
-		self.action_outputs_action = layers.Dense(15, kernel_initializer=self.initializer, activation="tanh")(x)
+		x = layers.Dense(64, kernel_initializer=self.initializer)(x)
+		x = activations.relu(x, alpha=0.01)
+		x = layers.BatchNormalization(axis=-1)(x)
+		self.action_outputs_action = layers.Dense(15, kernel_initializer=self.initializer,\
+			activation="tanh")(x)
 
 		self.action_model = keras.Model(inputs=self.action_inputs_state,
 			outputs=self.action_outputs_action)
 		self.action_model.summary()
-
-		# self.action_model.compile(
-		# 	loss="mean_squared_error",
-		# 	optimizer=keras.optimizers.SGD()
-		# )
 
 	def advance(self, frame, action):
 		# convert action into continuous domain so it can be passed to action model
@@ -168,3 +173,16 @@ class Model:
 	def save_model(self, state_model_filename, action_model_filename):
 		self.state_model.save(state_model_filename)
 		self.action_model.save(action_model_filename)
+	
+	def load_model(self, state_model_filename, action_model_filename):
+		self.state_model = keras.models.load_model(state_model_filename)
+		self.action_model = keras.models.load_model(action_model_filename)
+		# combine the state and action models into one model and compile it
+		action_outputs = self.action_model(self.state_outputs_state)
+		self.combined_model = keras.Model(
+			inputs=[self.state_inputs_image, self.state_inputs_state, self.state_inputs_action],
+			outputs=action_outputs)
+		self.combined_model.compile(
+			loss="mean_squared_error",
+			optimizer=keras.optimizers.SGD(learning_rate=0.001, momentum=0.05)
+		)
