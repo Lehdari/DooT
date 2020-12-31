@@ -43,56 +43,18 @@ def main():
     model = Model()
     trainer = Trainer(model, reward_controller)
 
-    episode_mean_rewards = []
-
     print("Model setup complete. Starting training episodes")
 
     for i in range(episodes):
+        game.set_doom_map(choice(["map01", "map02", "map03", "map04", "map05"]))
+
         game.new_episode()
-        rewards_current_episode = []
+        reward_controller.player_start_pos = utils.get_player_pos(game)
 
         while not game.is_episode_finished():
             trainer.step(game, i)
 
-            # state = game.get_state()
-            # state_number = state.number
-
-            # action = model.predict_action()
-            # print("action: {}".format(action))
-            # model.advance(state.screen_buffer, action)
-            # game.make_action(action)
-
-
-            #reward = model.step(game)
-            #rewards_current_episode.append(reward)           
-            
-            # if state_number % 50 == 0:
-            #     print("State #" + str(state_number))
-            #     print("Reward:", reward)
-            #     print("=====================")
-
-            # disable sleep unless a human wants to watch the game
-            #if sleep_time > 0:
-            #    sleep(sleep_time)
-
-        
-        #print("Episode", i, "finished in", )
-        #print("Total rewards:", sum(rewards_current_episode))
-        #print("************************")
-
-        # compress all the rewards of an episode into a single number
-        #episode_mean_rewards.append(np.mean(rewards_current_episode))
-
-        """
-        if i % 5 == 0:
-            plt.plot(episode_mean_rewards)
-            plt.xlabel("Episode")
-            plt.ylabel("Reward")
-            plt.show()
-        """
-
-        #print("i:", i, "max mean reward", max(episode_mean_rewards), "last mean reward", episode_mean_rewards[i])
-        if (i+1 % 8) == 0:
+        if ((i+1) % 8) == 0:
             model.save_model("model_state.h5", "model_action.h5")
 
     # It will be done automatically anyway but sometimes you need to do it in the middle of the program...
