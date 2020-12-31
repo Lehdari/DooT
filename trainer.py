@@ -65,7 +65,7 @@ class Trainer:
 		self.gamma = 0.85
 		self.epsilon = 1.0
 		self.epsilon_min = 0.01
-		self.epsilon_decay = 0.99999
+		self.epsilon_decay = 0.999995
 		self.learning_rate = 0.005
 
 		self.episode_id_prev = -1
@@ -116,8 +116,11 @@ class Trainer:
 		self.epsilon = max(self.epsilon_min, self.epsilon)
 		#print("epsilon: {}".format(self.epsilon)) # TODO remove
 		if np.random.random() < self.epsilon:
-			if self.reward_delta > 0.0 and np.random.random() > 0.5:
-				action = self.action_prev # use previous action if reward rate is increasing
+			# with 90% change just mutate the previous action since usually in Doom there's
+			# strong coherency between consecutive actions
+			if np.random.random() > 0.1:
+				action = mutate_action(self.action_prev, 2)
+				action[14] *= 0.95 # some damping to reduce that 360 noscope business
 			else:
 				action = self.model.get_random_action()
 		else:
