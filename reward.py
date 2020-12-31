@@ -7,9 +7,8 @@ class Reward():
         self.player_start_pos = player_start_pos
 
         # exploration
-        self.exploration_tile_size = 32.0
-        self.exploration_tile_init = 4.0
-        self.exploration_decay_rate = 0.03
+        self.exploration_tile_size = 64.0
+        self.exploration_decay_rate = 0.05
         self.exploration_tiles = {}
 
         self.reset()
@@ -28,6 +27,9 @@ class Reward():
         self.weapon5_prev = -1
         self.weapon6_prev = -1
         self.ammo2_prev = -1
+        self.ammo3_prev = -1
+        self.ammo5_prev = -1
+        self.ammo6_prev = -1
         
         # combat
         self.health_prev = -1.0
@@ -55,6 +57,9 @@ class Reward():
         weapon5 = game.get_game_variable(vzd.WEAPON5)
         weapon6 = game.get_game_variable(vzd.WEAPON6)
         ammo2 = game.get_game_variable(vzd.AMMO2)
+        ammo3 = game.get_game_variable(vzd.AMMO3)
+        ammo5 = game.get_game_variable(vzd.AMMO5)
+        ammo6 = game.get_game_variable(vzd.AMMO6)
 
         if self.weapon0_prev < 0:
             self.weapon0_prev = weapon0
@@ -72,6 +77,12 @@ class Reward():
             self.weapon6_prev = weapon6
         if self.ammo2_prev < 0:
             self.ammo2_prev = ammo2
+        if self.ammo3_prev < 0:
+            self.ammo3_prev = ammo3
+        if self.ammo5_prev < 0:
+            self.ammo5_prev = ammo5
+        if self.ammo6_prev < 0:
+            self.ammo6_prev = ammo6
         
         weapon_reward = weapon0 - self.weapon0_prev
         weapon_reward += weapon1 - self.weapon1_prev
@@ -81,12 +92,15 @@ class Reward():
         weapon_reward += weapon5 - self.weapon5_prev
         weapon_reward += weapon6 - self.weapon6_prev
 
-        if weapon_reward > 0:
-            print("weapon_reward: {}".format(weapon_reward))
-
-        ammo_reward = ammo2 - self.ammo2_prev
+        ammo_reward = (ammo2 - self.ammo2_prev) * 5.0 # bullets
+        ammo_reward += (ammo3 - self.ammo3_prev) * 20.0 # shells
+        ammo_reward += (ammo5 - self.ammo5_prev) * 50.0 # rockets
+        ammo_reward += (ammo6 - self.ammo6_prev) * 12.0 # plasma
         
         self.ammo2_prev = ammo2
+        self.ammo3_prev = ammo3
+        self.ammo5_prev = ammo5
+        self.ammo6_prev = ammo6
 
         self.weapon0_prev = weapon0
         self.weapon1_prev = weapon1
@@ -136,7 +150,17 @@ class Reward():
             self.exploration_tiles[tile_id] = self.exploration_tiles[tile_id]*\
                 (1.0-self.exploration_decay_rate) - self.exploration_decay_rate
         else:
-            self.exploration_tiles[tile_id] = self.exploration_tile_init
+            # initialize tile reward according to distance to starting point
+            tile_x_middle = (tile_id[0] + 0.5)*self.exploration_tile_size
+            tile_y_middle = (tile_id[1] + 0.5)*self.exploration_tile_size
+            tile_dist_start = np.linalg.norm(np.array([tile_x_middle, tile_y_middle]) -\
+                self.player_start_pos[0:2])
+
+            self.exploration_tiles[tile_id] = 1.0 +\
+                np.power(max(tile_dist_start/2.0-30.0, 0.0), 0.3)
+            
+            #self.exploration_tiles[tile_id] = self.exploration_tile_init
+
         
         self.exploration_tiles[tile_id]
 
@@ -162,10 +186,8 @@ class Reward():
         living_reward = 0.0
 
         velocity_reward = self.get_velocity_reward(game)
-        #print("velocity_reward: {}".format(velocity_reward))
 
         start_dist_reward = self.get_start_distance_reward(player_pos)
-        #print("start_dist_reward: {}".format(start_dist_reward))
 
         exploration_reward = self.get_exploration_reward(player_pos)
 
@@ -176,8 +198,14 @@ class Reward():
         misc_reward = self.get_misc_reward(game)
         #print(misc_reward)
 
-        return living_reward + 0.3*velocity_reward + 0.01*start_dist_reward + exploration_reward +\
-            item_reward + 10 * combat_reward + misc_reward
+        return\
+            living_reward +\
+            0.3*velocity_reward +\
+            0.0*start_dist_reward +\
+            exploration_reward +\
+            item_reward +\
+            5.0 * combat_reward +\
+            misc_reward
     
     def get_distance(self, game):
         return np.linalg.norm(get_player_pos(game) - self.player_start_pos)

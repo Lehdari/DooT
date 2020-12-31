@@ -75,7 +75,10 @@ def init_game():
     game.add_available_game_variable(vzd.GameVariable.WEAPON4)
     game.add_available_game_variable(vzd.GameVariable.WEAPON5)
     game.add_available_game_variable(vzd.GameVariable.WEAPON6)
-    game.add_available_game_variable(vzd.GameVariable.AMMO2)
+    game.add_available_game_variable(vzd.GameVariable.AMMO2) # bullets
+    game.add_available_game_variable(vzd.GameVariable.AMMO3) # shells
+    game.add_available_game_variable(vzd.GameVariable.AMMO5) # rockets
+    game.add_available_game_variable(vzd.GameVariable.AMMO6) # plasma
 
     game.add_available_game_variable(vzd.GameVariable.HEALTH)
     game.add_available_game_variable(vzd.GameVariable.ARMOR)
