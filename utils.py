@@ -1,5 +1,6 @@
 import numpy as np
 import vizdoom as vzd
+import random
 
 
 """
@@ -50,4 +51,20 @@ get null (mixed) action
 def get_null_action():
     action = np.zeros((15,), dtype=bool).tolist()
     action[14] = 0.0
+    return action
+
+"""
+Apply a mutation to an action
+"""
+def mutate_action(action, max_flipped_buttons=4, turn_delta_sigma=1.0):
+    # flip buttons
+    flipped_buttons = random.randint(1,max_flipped_buttons)
+    for i in range(flipped_buttons):
+        button_id = random.randint(0,13) # id of button to flip
+        action[button_id] = not action[button_id]
+    
+    # apply deviation to the turning delta
+    action[14] += random.gauss(0.0, turn_delta_sigma)
+    action[14] = np.clip(action[14], -10.0, 10.0)
+
     return action
