@@ -37,15 +37,10 @@ class MemorySequence:
 
 	def discount(self):
 		# iterate the sequence backwards to pass discounted rewards to previous entries
-		# print("Entry {:3d}: r: {:10.5f} dr: {:10.5f}".format(len(self.sequence)-1,
-		# 	self.sequence[-1].reward, self.sequence[-1].disc_reward))
 		for i in range(len(self.sequence)-2, -1, -1):
 			self.sequence[i].disc_reward =\
 				self.discount_factor*self.sequence[i+1].disc_reward +\
 				self.sequence[i].reward
-
-			# print("Entry {:3d}: r: {:10.5f} dr: {:10.5f}".format(i, self.sequence[i].reward,
-			# 	self.sequence[i].disc_reward))
 
 	def get_best_entries(self, n_entries):
 		# sort according to discounted reward
@@ -62,11 +57,10 @@ class Trainer:
 		self.replay_episode_interval = 8 # experience replay interval in episodes
 		self.replay_n_entries_min = 16 # number of entries used for training from worst sequence
 		self.replay_n_entries_delta = 16 # number of entries to increase for better sequences
-		self.gamma = 0.85
-		self.epsilon = 1.0
+		
+		self.epsilon = 1.0 # probability for random action
 		self.epsilon_min = 0.01
 		self.epsilon_decay = 0.999995
-		self.learning_rate = 0.005
 
 		self.episode_id_prev = -1
 		self.episode_reset()
@@ -80,8 +74,6 @@ class Trainer:
 		self.action_prev = get_null_action()
 
 		self.reward_cum = 0.0 # cumulative reward
-		self.reward_prev = 0.0 # previous reward
-		self.reward_delta = 0.0 # reward change in most recent step
 
 	"""
 	Perform one step;
@@ -114,7 +106,7 @@ class Trainer:
 		# With probability 1-epsilon choose best known action ("exploit")
 		self.epsilon *= self.epsilon_decay
 		self.epsilon = max(self.epsilon_min, self.epsilon)
-		#print("epsilon: {}".format(self.epsilon)) # TODO remove
+
 		if np.random.random() < self.epsilon:
 			# with 90% change just mutate the previous action since usually in Doom there's
 			# strong coherency between consecutive actions
@@ -134,26 +126,18 @@ class Trainer:
 		reward += self.reward.get_reward(game)
 		# update cumulative reward and reward delta
 		self.reward_cum += reward;
-		# slight lowpass filter on reward delta to smooth out the spikes
-		self.reward_delta = 0.1*(reward - self.reward_prev) + 0.9*self.reward_delta
-		self.reward_prev = reward
 
 		# TODO temp
 		action_print = np.where(action, 1, 0)
-		print("{} {:8.3f} {:8.3f} {:8.3f}".format(
-			action_print[0:14], action[14], reward, self.reward_delta), end="\r")
-		# print("{} {:8.3f} {:8.3f} {:8.3f}".format(
-		# 	action_print[0:14], action[14], self.reward_cum, self.reward.get_distance(game)), end="\r")
+		print("{} {:8.3f} {:8.3f}".format(
+			action_print[0:14], action[14], reward), end="\r")
 		# TODO end of temp
-
 
 		# Save the step into active(last in the list) memory sequence
 		self.memory[-1].add_entry(screen_buf, state_prev, self.action_prev, action, reward)
 
 		# save the action taken for next step
 		self.action_prev = action.copy()
-
-		# print("reward: {}".format(reward)) # TODO remove
 
 		done = game.is_episode_finished()
 		if done:
