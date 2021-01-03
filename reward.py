@@ -46,7 +46,7 @@ class Reward():
         vy = game.get_game_variable(vzd.VELOCITY_Y)
         # some low pass filter to smooth out jitter
         self.velocity = 0.1 * self.velocity + 0.9 * np.sqrt(vx*vx + vy*vy)
-        return self.velocity
+        return self.velocity/8.33 - 1.0 # error -1 when standing still, 0 for walking, 1 for running
     
     def get_item_reward(self, game):
         weapon0 = game.get_game_variable(vzd.WEAPON0)
@@ -110,7 +110,7 @@ class Reward():
         self.weapon5_prev = weapon5
         self.weapon6_prev = weapon6
 
-        return ammo_reward + weapon_reward * 2048.0
+        return ammo_reward + weapon_reward * 100.0
 
     def get_combat_reward(self, game):
         health = game.get_game_variable(vzd.HEALTH)
@@ -200,11 +200,11 @@ class Reward():
 
         return\
             living_reward +\
-            0.3*velocity_reward +\
+            1.0*velocity_reward +\
             0.0*start_dist_reward +\
-            exploration_reward +\
-            item_reward +\
-            5.0 * combat_reward +\
+            2.0*exploration_reward +\
+            0.5*item_reward +\
+            2.0 * combat_reward +\
             misc_reward
     
     def get_distance(self, game):
