@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 
 def main():
     game = init_game()
-    episodes = 1024
+    episodes = 10000
 
     # Sets time that will pause the engine after each action (in seconds)
     # Without this everything would go too fast for you to keep track of what's happening.
