@@ -149,14 +149,6 @@ class Model:
 		action = self.action_model.predict(np.expand_dims(self.state,0))[0]
 		return convert_action_to_mixed(action)
 
-	"""
-	return: list length of 15: 14 booleans and 1 float
-	"""
-	def get_random_action(self):
-		random_action = random.choices([True, False], k=14)
-		random_action.append(random.gauss(0, 3.3))
-		return random_action
-
 	def train(self, frames_in, states_in, actions_in, actions_out):
 		frames_in = np.asarray(frames_in)
 		states_in = np.asarray(states_in)

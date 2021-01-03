@@ -46,6 +46,19 @@ def convert_action_to_continuous(action_mixed):
     return action_cont
 
 """
+return: list length of 15: 14 booleans and 1 float
+"""
+def get_random_action(weapon_switch_prob=0.05):
+    random_action = random.choices([True, False], k=7)
+    random_action += [False, False, False, False, False, False, False]
+
+    if random.random() < weapon_switch_prob:
+        random_action[random.randint(7,13)] = True
+
+    random_action.append(random.gauss(0, 3.3))
+    return random_action
+
+"""
 get null (mixed) action
 """
 def get_null_action():

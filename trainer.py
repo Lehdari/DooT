@@ -114,7 +114,7 @@ class Trainer:
 				action = mutate_action(self.action_prev, 2)
 				action[14] *= 0.95 # some damping to reduce that 360 noscope business
 			else:
-				action = self.model.get_random_action()
+				action = get_random_action(weapon_switch_prob=(0.45-0.4*self.epsilon))
 		else:
 			action = self.model.predict_action() # make action predicted from model state
 
