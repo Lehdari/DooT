@@ -17,6 +17,9 @@ def init_game():
     # Sets map to start (scenario .wad files can contain many maps).
     game.set_doom_map("map01")
 
+    # Easy difficulty
+    game.set_doom_skill(1)
+
     # Sets resolution. Default is 320X240
     game.set_screen_resolution(vzd.ScreenResolution.RES_320X240)
 
@@ -89,7 +92,7 @@ def init_game():
     game.add_available_game_variable(vzd.GameVariable.ATTACK_READY)
 
     # How many ticks the episode is at maximum
-    game.set_episode_timeout(512)
+    game.set_episode_timeout(1024)
 
     # Makes episodes start after 14 tics (~after raising the weapon)
     game.set_episode_start_time(14)
@@ -103,7 +106,7 @@ def init_game():
     # Enables engine output to console.
     #game.set_console_enabled(True)
 
-    game.set_death_penalty(2084)
+    game.set_death_penalty(1000)
 
     # Initialize the game. Further configuration won't take any effect from now on.
     game.init()
