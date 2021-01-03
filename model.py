@@ -12,7 +12,6 @@ class Model:
 	def __init__(self):
 		self.initializer = initializers.RandomNormal(stddev=0.04)
 		self.state_size = 64
-		#self.state = np.random.rand(self.state_size)
 		self.state = np.zeros((self.state_size,))
 
 		self.create_state_model(3)
@@ -123,11 +122,6 @@ class Model:
 	def advance(self, frame, action):
 		# convert action into continuous domain so it can be passed to action model
 		action = convert_action_to_continuous(action)
-
-		# TODO TEMP
-		#frame = np.zeros_like(frame)
-		#self.state = np.zeros_like(self.state)
-		#action = np.zeros_like(action)
 		
 		self.state = self.state_model.predict([
 			np.expand_dims(frame, 0),
@@ -154,10 +148,6 @@ class Model:
 		states_in = np.asarray(states_in)
 		actions_in = np.asarray(actions_in)
 		actions_out = np.asarray(actions_out)
-		print("frames_in.shape: {}".format(frames_in.shape))
-		print("states_in.shape: {}".format(states_in.shape))
-		print("actions_in.shape: {}".format(actions_in.shape))
-		print("actions_out.shape: {}".format(actions_out.shape))
 
 		self.combined_model.fit(x=[frames_in, states_in, actions_in], y=actions_out,
 			batch_size=32, epochs=8, shuffle=True)
