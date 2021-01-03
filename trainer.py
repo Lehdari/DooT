@@ -3,7 +3,11 @@ from model import Model
 import numpy as np
 import tensorflow as tf
 import random
+import math
+from scipy.signal import argrelextrema
 from utils import *
+
+import matplotlib.pyplot as plt
 
 
 class MemoryEntry:
@@ -22,7 +26,7 @@ class MemoryEntry:
 		self.action_in = convert_action_to_continuous(action_in)
 		self.action_out = convert_action_to_continuous(action_out)
 		self.reward = reward
-		self.disc_reward = reward # discounted reward
+		self.reward_disc = reward # discounted reward
 
 
 class MemorySequence:
@@ -38,14 +42,59 @@ class MemorySequence:
 	def discount(self):
 		# iterate the sequence backwards to pass discounted rewards to previous entries
 		for i in range(len(self.sequence)-2, -1, -1):
-			self.sequence[i].disc_reward =\
-				self.discount_factor*self.sequence[i+1].disc_reward +\
+			self.sequence[i].reward_disc =\
+				self.discount_factor*self.sequence[i+1].reward_disc +\
 				self.sequence[i].reward
+			# future rewards can only affect positively
+			if self.sequence[i].reward_disc < self.sequence[i].reward:
+				self.sequence[i].reward_disc = self.sequence[i].reward
 
 	def get_best_entries(self, n_entries):
 		# sort according to discounted reward
-		seq_sorted = sorted(self.sequence, key=lambda entry: entry.disc_reward)
+		seq_sorted = sorted(self.sequence, key=lambda entry: entry.reward_disc)
 		return seq_sorted[-n_entries:]
+	
+	def get_entries_threshold(self, threshold):
+		return filter(lambda e: e.reward_disc > threshold, self.sequence)
+	
+	# find best clutch moment (subsequence with highest reward increase rate)
+	def get_best_clutch(self, smooth_size=128):
+		reward = [e.reward for e in self.sequence]
+		
+		# smoothing
+		sigma = smooth_size / 3.3
+		smooth_kernel = np.linspace(-3.3, 3.3, smooth_size+1)
+		smooth_kernel = (1.0/(sigma*np.sqrt(2.0*math.pi)))*\
+			np.exp(-0.5*np.power(smooth_kernel, 2.0))
+		reward_smooth = np.convolve(reward, smooth_kernel, mode="same")
+
+		# list all extremum points
+		extrema = np.sort(np.concatenate([np.array([[0]]),
+			argrelextrema(reward_smooth, np.greater),
+			argrelextrema(reward_smooth, np.less),
+			np.array([[len(reward_smooth)-1]])], axis=1).flatten())
+
+		# find the two consecutive extrema with highest reward increase rate
+		best_extrema = [-1, -1]
+		slope_max = 0.0
+		for i in range(extrema.shape[0]-1):
+			slope = (reward_smooth[extrema[i+1]] - reward_smooth[extrema[i]]) /\
+				(extrema[i+1] - extrema[i])
+			if slope > slope_max:
+				best_extrema = [extrema[i], extrema[i+1]]
+				slope_max = slope
+
+		if best_extrema[0] < 0:
+			return [] # only downhill from the beginning :(
+		else:
+			return self.sequence[best_extrema[0]:best_extrema[1]]
+	
+	def get_average_discounted_reward(self):
+		# sort according to discounted reward
+		s = 0.0
+		for e in self.sequence:
+			s += e.reward_disc
+		return s / len(self.sequence)
 
 
 class Trainer:
@@ -53,14 +102,17 @@ class Trainer:
 		self.model = model
 		self.reward = reward
 
-		self.memory = [] # list of sequences
-		self.replay_episode_interval = 8 # experience replay interval in episodes
-		self.replay_n_entries_min = 16 # number of entries used for training from worst sequence
-		self.replay_n_entries_delta = 16 # number of entries to increase for better sequences
+		#self.replay_episode_interval = 8 # experience replay interval in episodes
+		#self.replay_n_entries_min = 16 # number of entries used for training from worst sequence
+		#self.replay_n_entries_delta = 16 # number of entries to increase for better sequences
+		self.replay_n_entries = 2048
+		self.threshold = 0.0
+		self.replay_reset()
+		self.threshold_prev = -1000001.0
 		
 		self.epsilon = 1.0 # probability for random action
-		self.epsilon_min = 0.01
-		self.epsilon_decay = 0.999995
+		self.epsilon_min = 0.02
+		self.epsilon_decay = 0.96
 
 		self.episode_id_prev = -1
 		self.episode_reset()
@@ -73,7 +125,18 @@ class Trainer:
 		self.model.reset_state()
 		self.action_prev = get_null_action()
 
+		self.memory = MemorySequence()
 		self.reward_cum = 0.0 # cumulative reward
+	
+	def replay_reset(self):
+		self.frames_in = []
+		self.states_in = []
+		self.actions_in = []
+		self.actions_out = []
+		self.n_entries = 0
+		# new reward average - used as limit threshold for new replay entries
+		self.threshold_prev = self.threshold / self.replay_n_entries
+		self.threshold = 0.0
 
 	"""
 	Perform one step;
@@ -86,10 +149,6 @@ class Trainer:
 	return: 	reward (1D float)
 	"""
 	def step(self, game, episode_id):
-		if episode_id != self.episode_id_prev:
-			self.memory.append(MemorySequence())
-			self.episode_id_prev = episode_id
-
 		state_game = game.get_state()
 
 		#TODO: stack frames
@@ -104,23 +163,22 @@ class Trainer:
 		# Epsilon-greedy algorithm
 		# With probability epsilon choose a random action ("explore")
 		# With probability 1-epsilon choose best known action ("exploit")
-		self.epsilon *= self.epsilon_decay
-		self.epsilon = max(self.epsilon_min, self.epsilon)
-
 		if np.random.random() < self.epsilon:
 			# with 90% change just mutate the previous action since usually in Doom there's
 			# strong coherency between consecutive actions
 			if np.random.random() > 0.1:
-				action = mutate_action(self.action_prev, 2)
-				action[14] *= 0.95 # some damping to reduce that 360 noscope business
+				action = mutate_action(self.action_prev, 2,
+					weapon_switch_prob=(0.23-0.2*self.epsilon))
+
+				# apply some damping to turning delta to reduce that 360 noscope business
+				action[14] *= (0.98-0.03*self.epsilon)
 			else:
 				action = get_random_action(weapon_switch_prob=(0.45-0.4*self.epsilon))
 		else:
 			action = self.model.predict_action() # make action predicted from model state
 
-		# Intentionally ignore the reward the game gives
+		# Only pick up the death penalty from the builtin reward system
 		reward = game.make_action(action)
-		#print("game reward: {}".format(reward))
 
 		# Instead, use our own reward system
 		reward += self.reward.get_reward(game)
@@ -134,49 +192,56 @@ class Trainer:
 		# TODO end of temp
 
 		# Save the step into active(last in the list) memory sequence
-		self.memory[-1].add_entry(screen_buf, state_prev, self.action_prev, action, reward)
+		self.memory.add_entry(screen_buf, state_prev, self.action_prev, action, reward)
 
 		# save the action taken for next step
 		self.action_prev = action.copy()
 
 		done = game.is_episode_finished()
 		if done:
-			print("Episode {} finished, cumulative reward: {:10.5f}, epsilon: {:10.5f}"
-				.format(episode_id, self.reward_cum, self.epsilon))
 			# save the cumulative reward to the sequence
-			self.memory[-1].reward_cum = self.reward_cum
+			self.memory.reward_cum = self.reward_cum
+			self.memory.discount()
+			
+			if self.threshold_prev < -1000000.0:
+				# baseline threshold reward
+				self.threshold_prev = self.memory.get_average_discounted_reward()
+				print("Initial threshold set: {}".format(self.threshold_prev))
+			else:
+				# entries with highest discounted value
+				top_entries = list(self.memory.get_entries_threshold(self.threshold_prev))
 
+				# Reduce threshold and increase random action epsilon if no entries exceed the
+				# current threshold. This might be due to drifting to local maximum
+				if len(top_entries) == 0:
+					self.threshold_prev *= 0.99
+					self.epsilon += (1.0-self.epsilon)*0.01
+
+				# pick clutch entries also
+				top_entries += self.memory.get_best_clutch()
+
+				self.n_entries += len(top_entries)
+				print("Episode {} finished, cumulative reward: {:10.3f}\nepsilon: {:8.5f} entry threshold: {:8.5f} training entries: {}/{}"
+					.format(episode_id, self.reward_cum, self.epsilon,\
+					self.threshold_prev, self.n_entries, self.replay_n_entries))
+
+				# add top entries to the training buffers
+				for e in top_entries:
+					self.frames_in.append(e.frame_in)
+					self.states_in.append(e.state_in)
+					self.actions_in.append(e.action_in)
+					self.actions_out.append(e.action_out)
+					self.threshold += e.reward_disc
+
+				# Sufficient number of entries gathered, time to train
+				if self.n_entries >= self.replay_n_entries:
+					# train
+					self.model.train(self.frames_in, self.states_in, self.actions_in,
+						self.actions_out)
+					self.replay_reset()
+					self.epsilon *= self.epsilon_decay
+					self.epsilon = max(self.epsilon_min, self.epsilon)
+			
 			# reset stuff for the new episode
 			self.episode_reset()
-			
 			self.reward.reset_exploration()
-
-			if (episode_id+1) % self.replay_episode_interval == 0:
-				print("================================================================================")
-				print("Experience replay interval reached, training...")
-
-				# gather best entries from the memory
-				frames_in = []
-				states_in = []
-				actions_in = []
-				actions_out = []
-
-				# use self.replay_n_sequences best sequences
-				self.memory.sort(key=lambda sequence: sequence.reward_cum)
-				n_entries = self.replay_n_entries_min
-				for sequence in self.memory:
-					print("{:10.5f} {}".format(sequence.reward_cum, n_entries))
-					sequence.discount()
-					best = sequence.get_best_entries(n_entries)
-					for e in best:
-						frames_in.append(e.frame_in)
-						states_in.append(e.state_in)
-						actions_in.append(e.action_in)
-						actions_out.append(e.action_out)
-					n_entries += self.replay_n_entries_delta
-
-				# train
-				self.model.train(frames_in, states_in, actions_in, actions_out)
-
-				# clear memory
-				self.memory = []
