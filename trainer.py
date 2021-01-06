@@ -112,7 +112,7 @@ class Trainer:
 		
 		self.epsilon = 1.0 # probability for random action
 		self.epsilon_min = 0.02
-		self.epsilon_decay = 0.96
+		self.epsilon_decay = 0.98
 
 		self.episode_id_prev = -1
 		self.episode_reset()
@@ -127,6 +127,10 @@ class Trainer:
 
 		self.memory = MemorySequence()
 		self.reward_cum = 0.0 # cumulative reward
+		self.reward_n = 0
+
+		self.reward_lowpass = None
+		self.epsilon_reactive = self.epsilon
 	
 	def replay_reset(self):
 		self.frames_in = []
@@ -163,17 +167,17 @@ class Trainer:
 		# Epsilon-greedy algorithm
 		# With probability epsilon choose a random action ("explore")
 		# With probability 1-epsilon choose best known action ("exploit")
-		if np.random.random() < self.epsilon:
+		if np.random.random() < self.epsilon_reactive:
 			# with 90% change just mutate the previous action since usually in Doom there's
 			# strong coherency between consecutive actions
 			if np.random.random() > 0.1:
 				action = mutate_action(self.action_prev, 2,
-					weapon_switch_prob=(0.23-0.2*self.epsilon))
+					weapon_switch_prob=(0.23-0.2*self.epsilon_reactive))
 
 				# apply some damping to turning delta to reduce that 360 noscope business
-				action[14] *= (0.98-0.03*self.epsilon)
+				action[14] *= (0.98-0.03*self.epsilon_reactive)
 			else:
-				action = get_random_action(weapon_switch_prob=(0.45-0.4*self.epsilon))
+				action = get_random_action(weapon_switch_prob=(0.45-0.4*self.epsilon_reactive))
 		else:
 			action = self.model.predict_action() # make action predicted from model state
 
@@ -184,11 +188,23 @@ class Trainer:
 		reward += self.reward.get_reward(game)
 		# update cumulative reward and reward delta
 		self.reward_cum += reward;
+		
+		self.reward_n += 1
+
+		if self.reward_lowpass is None:
+			self.reward_lowpass = reward
+		self.reward_lowpass = 0.97*self.reward_lowpass + 0.03*reward
+
+		if self.reward_lowpass > self.reward_cum / self.reward_n:
+			self.epsilon_reactive *= 0.997
+		else:
+			self.epsilon_reactive += (1.0-self.epsilon_reactive)*0.005
 
 		# TODO temp
 		action_print = np.where(action, 1, 0)
-		print("{} {:8.3f} {:8.3f}".format(
-			action_print[0:14], action[14], reward), end="\r")
+		print("{} {:8.3f} | {:8.3f} {:8.3f} | {:8.7f}".format(
+			action_print[0:14], action[14], self.reward_lowpass, self.reward_cum/self.reward_n,
+			self.epsilon_reactive), end="\r")
 		# TODO end of temp
 
 		# Save the step into active(last in the list) memory sequence
