@@ -26,6 +26,32 @@ class Model:
 			loss="mean_squared_error",
 			optimizer=keras.optimizers.SGD(learning_rate=0.001, momentum=0.05)
 		)
+	
+	def module_dense(self, x, n, alpha=0.01, dropout=None):
+		x = layers.Dense(n, kernel_initializer=self.initializer)(x)
+		x = activations.relu(x, alpha=alpha)
+
+		x = layers.BatchNormalization(axis=-1)(x)
+
+		if dropout is not None:
+			x = layers.Dropout(dropout)(x)
+		
+		return x
+	
+	def module_conv(self, x, n1, n2, k1=(3,3), k2=(3,3), dropout=None):
+		x = layers.Conv2D(n1, k1, padding="same", kernel_initializer=self.initializer,
+			strides=(2,2), activation="relu")(x)
+		x = layers.Conv2D(n2, k2, padding="same", kernel_initializer=self.initializer,
+			activation="relu")(x)
+
+		x = layers.BatchNormalization(axis=-1)(x)
+
+		if dropout is not None:
+			x = layers.Dropout(dropout)(x)
+		
+		return x
+
+
 
 	def create_state_model(self, n_channels):
 		self.state_inputs_image = keras.Input(shape=(240, 320, n_channels))
@@ -36,31 +62,19 @@ class Model:
 		x = layers.Conv2D(16, (3, 3), padding="same", kernel_initializer=self.initializer,
 			activation="relu")(self.state_inputs_image)
 		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Conv2D(32, (3, 3), padding="same", kernel_initializer=self.initializer,
-			strides=(2,2), activation="relu")(x) #120x160
-		x = layers.Conv2D(32, (3, 3), padding="same", kernel_initializer=self.initializer,
-			activation="relu")(x)
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Conv2D(64, (3, 3), padding="same", kernel_initializer=self.initializer,
-			strides=(2,2), activation="relu")(x) #60x80
-		x = layers.Conv2D(64, (3, 3), padding="same", kernel_initializer=self.initializer,
-			activation="relu")(x)
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Conv2D(128, (3, 3), padding="same", kernel_initializer=self.initializer,
-			strides=(2,2), activation="relu")(x) #30x40
-		x = layers.Conv2D(128, (3, 3), padding="same", kernel_initializer=self.initializer,
-			activation="relu")(x)
-		x = layers.BatchNormalization(axis=-1)(x)
+
+		x = self.module_conv(x, 32, 32, dropout=0.4) #120x160
+		x = self.module_conv(x, 64, 64, dropout=0.3) #60x80
+		x = self.module_conv(x, 128, 128, dropout=0.2) #30x40
+
 		x = layers.Conv2D(256, (3, 3), padding="same", kernel_initializer=self.initializer,
 			strides=(2,2), activation="relu")(x) #15x20
 		x = layers.Conv2D(256, (2, 3), kernel_initializer=self.initializer,
 			activation="relu")(x) #14x18
 		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Conv2D(512, (3, 3), padding="same", kernel_initializer=self.initializer,
-			strides=(2,2), activation="relu")(x) #7x9
-		x = layers.Conv2D(512, (1, 1), kernel_initializer=self.initializer,
-			activation="relu")(x)
-		x = layers.BatchNormalization(axis=-1)(x)
+
+		x = self.module_conv(x, 512, 512, k2=(1, 1)) #7x9
+
 		x = layers.Conv2D(256, (1, 1), kernel_initializer=self.initializer,
 			activation="relu")(x)
 		x = layers.BatchNormalization(axis=-1)(x)
@@ -77,18 +91,12 @@ class Model:
 
 		# concatenate with other inputs
 		x = layers.concatenate([x, self.state_inputs_state, self.state_inputs_action])
-		x = layers.Dense(1024,  kernel_initializer=self.initializer)(x)
-		x = activations.relu(x, alpha=0.01) # use leaky relu to allow for oscillation
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(512,  kernel_initializer=self.initializer)(x)
-		x = activations.relu(x, alpha=0.01)
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(256,  kernel_initializer=self.initializer)(x)
-		x = activations.relu(x, alpha=0.01)
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(self.state_size*2,  kernel_initializer=self.initializer)(x)
-		x = activations.relu(x, alpha=0.01)
-		x = layers.BatchNormalization(axis=-1)(x)
+
+		x = self.module_dense(x, 1024, dropout=0.5)
+		x = self.module_dense(x, 512, dropout=0.3)
+		x = self.module_dense(x, 256, dropout=0.1)
+		x = self.module_dense(x, self.state_size*2)
+
 		# linear activation in state output
 		self.state_outputs_state =\
 			layers.Dense(self.state_size,  kernel_initializer=self.initializer)(x)
@@ -100,18 +108,12 @@ class Model:
 
 	def create_action_model(self):
 		self.action_inputs_state = keras.Input(shape=(self.state_size))
-		x = layers.Dense(512, kernel_initializer=self.initializer)(self.action_inputs_state)
-		x = activations.relu(x, alpha=0.01) # use leaky relu to allow for oscillation
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(256, kernel_initializer=self.initializer)(x)
-		x = activations.relu(x, alpha=0.01)
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(128, kernel_initializer=self.initializer)(x)
-		x = activations.relu(x, alpha=0.01)
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Dense(64, kernel_initializer=self.initializer)(x)
-		x = activations.relu(x, alpha=0.01)
-		x = layers.BatchNormalization(axis=-1)(x)
+
+		x = self.module_dense(self.action_inputs_state, 512, dropout=0.5)
+		x = self.module_dense(x, 256, dropout=0.3)
+		x = self.module_dense(x, 128, dropout=0.1)
+		x = self.module_dense(x, 64)
+
 		self.action_outputs_action = layers.Dense(15, kernel_initializer=self.initializer,\
 			activation="tanh")(x)
 
