@@ -21,7 +21,7 @@ from time import sleep
 from init_game import init_game
 from reward import Reward
 from model import Model
-from trainer import Trainer
+from trainer_simple import TrainerSimple
 import utils
 import matplotlib.pyplot as plt
 
@@ -41,7 +41,8 @@ def main():
 
     reward_controller = Reward(player_start_pos)
     model = Model()
-    trainer = Trainer(model, reward_controller)
+    #model.load_model("model_state.h5", "model_action.h5")
+    trainer = TrainerSimple(model, reward_controller)
 
     print("Model setup complete. Starting training episodes")
 
@@ -55,7 +56,7 @@ def main():
             trainer.step(game, i)
 
         if ((i+1) % 8) == 0:
-            model.save_model("model_state.h5", "model_action.h5")
+            model.save_model("model")
 
     # It will be done automatically anyway but sometimes you need to do it in the middle of the program...
     game.close()

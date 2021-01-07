@@ -10,22 +10,19 @@ from utils import *
 
 class Model:
 	def __init__(self):
-		self.initializer = initializers.RandomNormal(stddev=0.04)
+		self.initializer = initializers.RandomNormal(stddev=0.07)
 		self.state_size = 64
+		self.image_enc_size = 256
+
 		self.state = np.zeros((self.state_size,))
 
-		self.create_state_model(3)
+		self.create_image_model(3)
+		self.create_state_model()
 		self.create_action_model()
+		self.create_forward_model()
+		self.create_inverse_model()
 
-		# combine the state and action models into one model and compile it
-		action_outputs = self.action_model(self.state_outputs_state)
-		self.combined_model = keras.Model(
-			inputs=[self.state_inputs_image, self.state_inputs_state, self.state_inputs_action],
-			outputs=action_outputs)
-		self.combined_model.compile(
-			loss="mean_squared_error",
-			optimizer=keras.optimizers.SGD(learning_rate=0.001, momentum=0.05)
-		)
+		self.combine_model()
 	
 	def module_dense(self, x, n, alpha=0.01, dropout=None):
 		x = layers.Dense(n, kernel_initializer=self.initializer)(x)
@@ -50,20 +47,11 @@ class Model:
 			x = layers.Dropout(dropout)(x)
 		
 		return x
+	
+	def create_image_model(self, n_channels):
+		self.model_image_i_image = keras.Input(shape=(240, 320, n_channels))
 
-
-
-	def create_state_model(self, n_channels):
-		self.state_inputs_image = keras.Input(shape=(240, 320, n_channels))
-		self.state_inputs_state = keras.Input(shape=(self.state_size))
-		self.state_inputs_action = keras.Input(shape=(15))
-
-		# image input branch
-		x = layers.Conv2D(16, (3, 3), padding="same", kernel_initializer=self.initializer,
-			activation="relu")(self.state_inputs_image)
-		x = layers.BatchNormalization(axis=-1)(x)
-
-		x = self.module_conv(x, 32, 32, dropout=0.4) #120x160
+		x = self.module_conv(self.model_image_i_image, 16, 32, dropout=0.4) #120x160
 		x = self.module_conv(x, 64, 64, dropout=0.3) #60x80
 		x = self.module_conv(x, 128, 128, dropout=0.2) #30x40
 
@@ -87,48 +75,153 @@ class Model:
 		x = layers.Conv2D(32, (1, 1), kernel_initializer=self.initializer,
 			activation="relu")(x)
 		x = layers.BatchNormalization(axis=-1)(x)
+		x = layers.Conv2D(16, (1, 1), kernel_initializer=self.initializer,
+			activation="relu")(x)
+		x = layers.BatchNormalization(axis=-1)(x)
 		x = layers.Flatten()(x)
 
-		# concatenate with other inputs
-		x = layers.concatenate([x, self.state_inputs_state, self.state_inputs_action])
+		self.model_image_o_image_enc = self.module_dense(x, self.image_enc_size)
+		self.model_image = keras.Model(
+			inputs=self.model_image_i_image,
+			outputs=self.model_image_o_image_enc,
+			name="model_image")
+		self.model_image.summary()
+
+	def create_state_model(self):
+		self.model_state_i_state = keras.Input(shape=(self.state_size))
+		self.model_state_i_image_enc = keras.Input(shape=(self.image_enc_size))
+		
+		# concatenate image encoding and layer 
+		x = layers.concatenate([self.model_state_i_state, self.model_state_i_image_enc])
 
 		x = self.module_dense(x, 1024, dropout=0.5)
 		x = self.module_dense(x, 512, dropout=0.3)
-		x = self.module_dense(x, 256, dropout=0.1)
+		x = self.module_dense(x, self.state_size*4, dropout=0.1)
 		x = self.module_dense(x, self.state_size*2)
 
-		# linear activation in state output
-		self.state_outputs_state =\
-			layers.Dense(self.state_size,  kernel_initializer=self.initializer)(x)
+		self.model_state_o_state =\
+			layers.Dense(self.state_size,  kernel_initializer=self.initializer,\
+			activation="tanh")(x)
+		
+		x = self.module_dense(x, self.state_size)
+		x = self.module_dense(x, self.state_size/2)
+		x = self.module_dense(x, 16)
 
-		self.state_model = keras.Model(
-			inputs=[self.state_inputs_image, self.state_inputs_state, self.state_inputs_action],
-			outputs=self.state_outputs_state)
-		self.state_model.summary()
+		# gate output value for previous state feedthrough
+		self.model_state_o_gate_prev = layers.Dense(1, kernel_initializer=self.initializer,
+			activation="sigmoid")(x)
+
+		# gate output value for new state (1 - model_state_o_gate_prev)
+		self.model_state_o_gate_new = layers.Lambda(lambda x: 1.0 - x)(
+			self.model_state_o_gate_prev)
+
+		self.model_state = keras.Model(
+			inputs=[self.model_state_i_state, self.model_state_i_image_enc],
+			outputs=[self.model_state_o_state, self.model_state_o_gate_prev,
+				self.model_state_o_gate_new],
+			name="model_state")
+		self.model_state.summary()
 
 	def create_action_model(self):
-		self.action_inputs_state = keras.Input(shape=(self.state_size))
+		self.model_action_i_state = keras.Input(shape=(self.state_size))
 
-		x = self.module_dense(self.action_inputs_state, 512, dropout=0.5)
-		x = self.module_dense(x, 256, dropout=0.3)
+		x = self.module_dense(self.model_action_i_state, 512, dropout=0.4)
+		x = self.module_dense(x, 256, dropout=0.2)
 		x = self.module_dense(x, 128, dropout=0.1)
 		x = self.module_dense(x, 64)
 
-		self.action_outputs_action = layers.Dense(15, kernel_initializer=self.initializer,\
+		self.model_action_o_action = layers.Dense(15, kernel_initializer=self.initializer,\
 			activation="tanh")(x)
 
-		self.action_model = keras.Model(inputs=self.action_inputs_state,
-			outputs=self.action_outputs_action)
-		self.action_model.summary()
+		self.model_action = keras.Model(
+			inputs=self.model_action_i_state,
+			outputs=self.model_action_o_action,
+			name="model_action")
+		self.model_action.summary()
+	
+	def create_forward_model(self):
+		self.model_forward_i_state = keras.Input(shape=(self.state_size))
+		self.model_forward_i_action = keras.Input(shape=(15))
 
-	def advance(self, frame, action):
-		# convert action into continuous domain so it can be passed to action model
-		action = convert_action_to_continuous(action)
+		x = layers.concatenate([self.model_forward_i_state, self.model_forward_i_action])
+
+		x = self.module_dense(x, 512, dropout=0.5)
+		x = self.module_dense(x, 512, dropout=0.3)
+		x = self.module_dense(x, self.state_size*4, dropout=0.1)
+		x = self.module_dense(x, self.state_size*2)
+
+		self.model_forward_o_state =\
+			layers.Dense(self.state_size,  kernel_initializer=self.initializer,\
+				activation="tanh")(x)
+
+		self.model_forward = keras.Model(
+			inputs=[self.model_forward_i_state, self.model_forward_i_action],
+			outputs=self.model_forward_o_state,
+			name="model_forward")
+		self.model_forward.summary()
+	
+	def create_inverse_model(self):
+		self.model_inverse_i_state1 = keras.Input(shape=(self.state_size))
+		self.model_inverse_i_state2 = keras.Input(shape=(self.state_size))
+
+		x = layers.concatenate([self.model_inverse_i_state1, self.model_inverse_i_state2])
+
+		x = self.module_dense(x, 8*self.state_size, dropout=0.4)
+		x = self.module_dense(x, 4*self.state_size, dropout=0.2)
+		x = self.module_dense(x, 2*self.state_size, dropout=0.1)
+		x = self.module_dense(x, self.state_size)
+
+		self.model_inverse_o_action = layers.Dense(15, kernel_initializer=self.initializer)(x)
+
+		self.model_inverse = keras.Model(
+			inputs=[self.model_inverse_i_state1, self.model_inverse_i_state2],
+			outputs=self.model_inverse_o_action,
+			name="model_inverse")
+		self.model_inverse.summary()
+	
+	def combine_model(self):
+		image_enc = self.model_image(self.model_image_i_image)
+		[state_new, gate_prev, gate_new] = self.model_state([self.model_state_i_state, image_enc])
+		state = layers.Add()([\
+			layers.Multiply()([self.model_state_i_state, gate_prev]),
+			layers.Multiply()([state_new, gate_new])
+		]) # new state mixed from old and new according to the gae value
+
+		self.model_advance = keras.Model(
+			inputs=[self.model_state_i_state, self.model_image_i_image],
+			outputs=state)
 		
-		self.state = self.state_model.predict([
-			np.expand_dims(frame, 0),
+		action_prev = self.model_inverse([self.model_state_i_state, state])
+		action = self.model_action([state]) # new action
+
+		self.model_combined = keras.Model(
+			inputs=[self.model_state_i_state, self.model_image_i_image],
+			outputs=[action_prev, action],
+			name="model_combined")
+		self.model_combined.compile(
+			loss="mean_squared_error",
+			optimizer=keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
+		)
+
+		self.model_forward.compile(
+			loss="mean_squared_error",
+			optimizer=keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999)
+		)
+
+	def advance(self, image, action_prev):
+		action_prev = convert_action_to_continuous(action_prev)
+		self.state_prediction = self.model_forward(
+			[np.expand_dims(self.state,0),
+			np.expand_dims(action_prev,0)],
+			training=False)[0]
+
+		self.state = self.model_advance([
 			np.expand_dims(self.state, 0),
-			np.expand_dims(action, 0)])[0]
+			np.expand_dims(image, 0)],
+			training=False)[0]
+		
+		# intrinsic model reward
+		return (np.square(self.state_prediction - self.state)).mean()
 
 	"""
 	Reset state (after an episode)
@@ -141,32 +234,36 @@ class Model:
 	return: list length of 15: 14 booleans and 1 float
 	"""
 	def predict_action(self):
-		#print("state: {}".format(self.state)) # TODO REMOVE
-		action = self.action_model.predict(np.expand_dims(self.state,0))[0]
+		action = self.model_action.predict(np.expand_dims(self.state,0))[0]
 		return convert_action_to_mixed(action)
 
-	def train(self, frames_in, states_in, actions_in, actions_out):
-		frames_in = np.asarray(frames_in)
-		states_in = np.asarray(states_in)
-		actions_in = np.asarray(actions_in)
-		actions_out = np.asarray(actions_out)
+	def train(self, state_prev, state, image, action_prev, action):
+		state_prev = np.asarray(state_prev)
+		state = np.asarray(state)
+		image = np.asarray(image)
+		action_prev = np.asarray(action_prev)
+		action = np.asarray(action)
 
-		self.combined_model.fit(x=[frames_in, states_in, actions_in], y=actions_out,
+		# first train the combined model
+		self.model_combined.fit(x=[state_prev, image], y=[action_prev, action],
+			batch_size=32, epochs=8, shuffle=True)
+		
+		# then the forward model
+		self.model_forward.fit(x=[state_prev, action_prev], y=state,
 			batch_size=32, epochs=8, shuffle=True)
 
-	def save_model(self, state_model_filename, action_model_filename):
-		self.state_model.save(state_model_filename)
-		self.action_model.save(action_model_filename)
+	def save_model(self, filename_prefix):
+		self.model_image.save("{}_image.h5".format(filename_prefix))
+		self.model_state.save("{}_state.h5".format(filename_prefix))
+		self.model_action.save("{}_action.h5".format(filename_prefix))
+		self.model_forward.save("{}_forward.h5".format(filename_prefix))
+		self.model_inverse.save("{}_inverse.h5".format(filename_prefix))
 	
-	def load_model(self, state_model_filename, action_model_filename):
-		self.state_model = keras.models.load_model(state_model_filename)
-		self.action_model = keras.models.load_model(action_model_filename)
-		# combine the state and action models into one model and compile it
-		action_outputs = self.action_model(self.state_outputs_state)
-		self.combined_model = keras.Model(
-			inputs=[self.state_inputs_image, self.state_inputs_state, self.state_inputs_action],
-			outputs=action_outputs)
-		self.combined_model.compile(
-			loss="mean_squared_error",
-			optimizer=keras.optimizers.SGD(learning_rate=0.001, momentum=0.05)
-		)
+	def load_model(self, filename_prefix):
+		self.model_image = keras.models.load_model("{}_image.h5".format(filename_prefix))
+		self.model_state = keras.models.load_model("{}_state.h5".format(filename_prefix))
+		self.model_action = keras.models.load_model("{}_action.h5".format(filename_prefix))
+		self.model_forward = keras.models.load_model("{}_forward.h5".format(filename_prefix))
+		self.model_inverse = keras.models.load_model("{}_inverse.h5".format(filename_prefix))
+
+		self.combine_model()

@@ -41,14 +41,14 @@ def convert_action_to_mixed(action_cont):
 convert action to continuous domain
 """
 def convert_action_to_continuous(action_mixed):
-    action_cont = np.where(action_mixed, 1.0, -1.0)
+    action_cont = np.where(action_mixed, 0.9, -0.9)
     action_cont[14] = action_mixed[14] / 10.0
     return action_cont
 
 """
 return: list length of 15: 14 booleans and 1 float
 """
-def get_random_action(weapon_switch_prob=0.05):
+def get_random_action(turn_delta_sigma=3.3, weapon_switch_prob=0.05):
     random_action = random.choices([True, False], k=7)
     random_action += [False, False, False, False, False, False, False]
 

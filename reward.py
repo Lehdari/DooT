@@ -187,9 +187,9 @@ class Reward():
 
         velocity_reward = self.get_velocity_reward(game)
 
-        start_dist_reward = self.get_start_distance_reward(player_pos)
+        start_dist_reward = 0.0#self.get_start_distance_reward(player_pos)
 
-        exploration_reward = self.get_exploration_reward(player_pos)
+        exploration_reward = 0.0#self.get_exploration_reward(player_pos)
 
         item_reward = self.get_item_reward(game)
 
@@ -201,11 +201,11 @@ class Reward():
         return\
             living_reward +\
             1.0*velocity_reward +\
-            0.0*start_dist_reward +\
+            1.0*start_dist_reward +\
             2.0*exploration_reward +\
             0.5*item_reward +\
-            2.0 * combat_reward +\
-            misc_reward
+            2.0*combat_reward +\
+            1.0*misc_reward
     
     def get_distance(self, game):
         return np.linalg.norm(get_player_pos(game) - self.player_start_pos)
