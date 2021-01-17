@@ -31,7 +31,7 @@ class MemoryEntry:
 
 
 class MemorySequence:
-	def __init__(self, discount_factor=0.95):
+	def __init__(self, discount_factor=0.97):
 		self.sequence = []
 		self.discount_factor = discount_factor
 		self.reward_cum = 0.0 # cumulative reward, assigned in the end of episode
@@ -45,10 +45,21 @@ class MemorySequence:
 		for i in range(len(self.sequence)-2, -1, -1):
 			self.sequence[i].reward_disc =\
 				self.discount_factor*self.sequence[i+1].reward_disc +\
-				self.sequence[i].reward
+				(1.0-self.discount_factor)*self.sequence[i].reward
 			# future rewards can only affect positively
 			if self.sequence[i].reward_disc < self.sequence[i].reward:
 				self.sequence[i].reward_disc = self.sequence[i].reward
+		
+		# rewards = []
+		# rewards_disc = []
+		# for e in self.sequence:
+		# 	rewards.append(e.reward)
+		# 	rewards_disc.append(e.reward_disc)
+		
+		# x = np.linspace(0, len(self.sequence), len(self.sequence), endpoint=False)
+		# plt.plot(x, rewards)
+		# plt.plot(x, rewards_disc)
+		# plt.show()
 
 	def get_best_entries(self, n_entries):
 		# sort according to discounted reward
@@ -106,7 +117,7 @@ class TrainerInterface:
 		self.episode_id = 0
 		self.episode_reset()
 
-		self.replay_n_entries = 2048
+		self.replay_n_entries = 4096
 		self.replay_reset()
 
 	
@@ -132,6 +143,7 @@ class TrainerInterface:
 		self.replay_images = []
 		self.replay_action_prevs = []
 		self.replay_actions = []
+		self.replay_rewards_disc = []
 		self.n_entries = 0
 	
 	def save_replay_entry(self, entry):
@@ -140,6 +152,7 @@ class TrainerInterface:
 		self.replay_images.append(entry.image)
 		self.replay_action_prevs.append(entry.action_prev)
 		self.replay_actions.append(entry.action)
+		self.replay_rewards_disc.append(entry.reward_disc)
 
 
 	"""
@@ -220,7 +233,7 @@ class TrainerInterface:
 				# train
 				self.model.train(
 					self.replay_state_prevs, self.replay_states, self.replay_images,
-					self.replay_action_prevs, self.replay_actions)
+					self.replay_action_prevs, self.replay_actions, self.replay_rewards_disc)
 				self.replay_reset()
 			
 			# reset stuff for the new episode

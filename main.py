@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 
 def main():
     game = init_game()
-    episodes = 10000
+    episodes = 16384
 
     # Sets time that will pause the engine after each action (in seconds)
     # Without this everything would go too fast for you to keep track of what's happening.
@@ -41,12 +41,12 @@ def main():
 
     reward_controller = Reward(player_start_pos)
     model = Model()
-    #model.load_model("model_state.h5", "model_action.h5")
+    #model.load_model("model")
     trainer = TrainerSimple(model, reward_controller)
 
     print("Model setup complete. Starting training episodes")
 
-    for i in range(episodes):
+    for i in range(0, episodes):
         game.set_doom_map(choice(["map01", "map02", "map03", "map04", "map05"]))
 
         game.new_episode()
@@ -55,7 +55,7 @@ def main():
         while not game.is_episode_finished():
             trainer.step(game, i)
 
-        if ((i+1) % 8) == 0:
+        if ((i+1) % 4) == 0:
             model.save_model("model")
 
     # It will be done automatically anyway but sometimes you need to do it in the middle of the program...

@@ -11,16 +11,18 @@ from utils import *
 class Model:
 	def __init__(self):
 		self.initializer = initializers.RandomNormal(stddev=0.07)
-		self.state_size = 64
+		self.state_size = 128
 		self.image_enc_size = 256
 
 		self.state = np.zeros((self.state_size,))
+		self.action_predict_step_size = 0.01
 
 		self.create_image_model(3)
 		self.create_state_model()
 		self.create_action_model()
 		self.create_forward_model()
 		self.create_inverse_model()
+		self.create_reward_model()
 
 		self.combine_model()
 	
@@ -97,18 +99,18 @@ class Model:
 		x = self.module_dense(x, 1024, dropout=0.5)
 		x = self.module_dense(x, 512, dropout=0.3)
 		x = self.module_dense(x, self.state_size*4, dropout=0.1)
-		x = self.module_dense(x, self.state_size*2)
+		y = self.module_dense(x, self.state_size*2)
 
+		# state output
 		self.model_state_o_state =\
 			layers.Dense(self.state_size,  kernel_initializer=self.initializer,\
-			activation="tanh")(x)
+			activation="tanh")(y)
 		
-		x = self.module_dense(x, self.state_size)
-		x = self.module_dense(x, self.state_size/2)
-		x = self.module_dense(x, 16)
+		x = self.module_dense(x, self.state_size*2)
 
 		# gate output value for previous state feedthrough
-		self.model_state_o_gate_prev = layers.Dense(1, kernel_initializer=self.initializer,
+		self.model_state_o_gate_prev =\
+			layers.Dense(self.state_size, kernel_initializer=self.initializer,
 			activation="sigmoid")(x)
 
 		# gate output value for new state (1 - model_state_o_gate_prev)
@@ -125,9 +127,10 @@ class Model:
 	def create_action_model(self):
 		self.model_action_i_state = keras.Input(shape=(self.state_size))
 
-		x = self.module_dense(self.model_action_i_state, 512, dropout=0.4)
-		x = self.module_dense(x, 256, dropout=0.2)
-		x = self.module_dense(x, 128, dropout=0.1)
+		x = self.module_dense(self.model_action_i_state, 1024, dropout=0.5)
+		x = self.module_dense(x, 512, dropout=0.3)
+		x = self.module_dense(x, 256, dropout=0.1)
+		x = self.module_dense(x, 128)
 		x = self.module_dense(x, 64)
 
 		self.model_action_o_action = layers.Dense(15, kernel_initializer=self.initializer,\
@@ -145,14 +148,14 @@ class Model:
 
 		x = layers.concatenate([self.model_forward_i_state, self.model_forward_i_action])
 
-		x = self.module_dense(x, 512, dropout=0.5)
-		x = self.module_dense(x, 512, dropout=0.3)
+		x = self.module_dense(x, self.state_size*8, dropout=0.5)
+		x = self.module_dense(x, self.state_size*4, dropout=0.3)
 		x = self.module_dense(x, self.state_size*4, dropout=0.1)
 		x = self.module_dense(x, self.state_size*2)
 
 		self.model_forward_o_state =\
 			layers.Dense(self.state_size,  kernel_initializer=self.initializer,\
-				activation="tanh")(x)
+			activation="tanh")(x)
 
 		self.model_forward = keras.Model(
 			inputs=[self.model_forward_i_state, self.model_forward_i_action],
@@ -171,13 +174,35 @@ class Model:
 		x = self.module_dense(x, 2*self.state_size, dropout=0.1)
 		x = self.module_dense(x, self.state_size)
 
-		self.model_inverse_o_action = layers.Dense(15, kernel_initializer=self.initializer)(x)
+		self.model_inverse_o_action = layers.Dense(15, kernel_initializer=self.initializer,
+			activation="tanh")(x)
 
 		self.model_inverse = keras.Model(
 			inputs=[self.model_inverse_i_state1, self.model_inverse_i_state2],
 			outputs=self.model_inverse_o_action,
 			name="model_inverse")
 		self.model_inverse.summary()
+	
+	def create_reward_model(self):
+		self.model_reward_i_state = keras.Input(shape=(self.state_size))
+		self.model_reward_i_action = keras.Input(shape=(15))
+
+		x = layers.concatenate([self.model_reward_i_state, self.model_reward_i_action])
+
+		x = self.module_dense(x, self.state_size*8, dropout=0.5)
+		x = self.module_dense(x, self.state_size*4, dropout=0.3)
+		x = self.module_dense(x, self.state_size*2, dropout=0.1)
+		x = self.module_dense(x, self.state_size)
+		x = self.module_dense(x, self.state_size/2)
+
+		self.model_reward_o_reward =\
+			layers.Dense(1,  kernel_initializer=self.initializer)(x)
+
+		self.model_reward = keras.Model(
+			inputs=[self.model_reward_i_state, self.model_reward_i_action],
+			outputs=self.model_reward_o_reward,
+			name="model_reward")
+		self.model_reward.summary()
 	
 	def combine_model(self):
 		image_enc = self.model_image(self.model_image_i_image)
@@ -192,14 +217,20 @@ class Model:
 			outputs=state)
 		
 		action_prev = self.model_inverse([self.model_state_i_state, state])
-		action = self.model_action([state]) # new action
+		#action = self.model_action([state]) # new action
+		reward = self.model_reward([state, self.model_reward_i_action])
 
 		self.model_combined = keras.Model(
-			inputs=[self.model_state_i_state, self.model_image_i_image],
-			outputs=[action_prev, action],
+			inputs=[
+				self.model_state_i_state,
+				self.model_image_i_image,
+				self.model_reward_i_action],
+			#outputs=[action_prev, action],
+			outputs=[action_prev, reward],
 			name="model_combined")
 		self.model_combined.compile(
 			loss="mean_squared_error",
+			loss_weights=[1.0, 0.001],
 			optimizer=keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
 		)
 
@@ -234,23 +265,68 @@ class Model:
 	return: list length of 15: 14 booleans and 1 float
 	"""
 	def predict_action(self):
-		action = self.model_action.predict(np.expand_dims(self.state,0))[0]
-		return convert_action_to_mixed(action)
+		# action = self.model_action.predict(np.expand_dims(self.state,0))[0]
+		# return convert_action_to_mixed(action)
 
-	def train(self, state_prev, state, image, action_prev, action):
+
+		action = tf.expand_dims(tf.random.normal([15], mean=0.0, stddev=0.01), 0)
+		# print(action.numpy())
+
+		for i in range(10):
+			with tf.GradientTape() as g:
+				g.watch(action)
+				reward = self.model_reward([np.expand_dims(self.state, 0), action], training=False)
+			action_grad = g.gradient(reward, action)
+			action_grad /= tf.math.reduce_std(action_grad) + 1e-8
+			action = action + action_grad*self.action_predict_step_size
+
+			#print(tf.math.reduce_max(tf.abs(action)).numpy())
+			#print(reward[0])
+		
+		action_max = tf.math.reduce_max(tf.abs(action)).numpy()
+		self.action_predict_step_size = ((1.0 / action_max)*0.1 + 0.9)*self.action_predict_step_size
+
+		#print("action_max: {}".format(action_max))
+		#print("step_size: {}".format(self.action_predict_step_size))
+		#print("==========================================================================")
+
+		print("B {:8.5f} ".format(reward[0].numpy()[0]), end="")
+		return convert_action_to_mixed(action[0])
+
+	def predict_worst_action(self):
+		action = tf.expand_dims(tf.random.normal([15], mean=0.0, stddev=0.01), 0)
+
+		for i in range(10):
+			with tf.GradientTape() as g:
+				g.watch(action)
+				reward = self.model_reward([np.expand_dims(self.state, 0), action], training=False)
+			action_grad = g.gradient(reward, action)
+			action_grad /= tf.math.reduce_std(action_grad) + 1e-8
+			action = action - action_grad*self.action_predict_step_size
+		
+		action_max = tf.math.reduce_max(tf.abs(action)).numpy()
+		self.action_predict_step_size = ((1.0 / action_max)*0.1 + 0.9)*self.action_predict_step_size
+		
+		print("W {:8.5f} ".format(reward[0].numpy()[0]), end="")
+		return convert_action_to_mixed(action[0])
+
+	def train(self, state_prev, state, image, action_prev, action, reward):
 		state_prev = np.asarray(state_prev)
 		state = np.asarray(state)
 		image = np.asarray(image)
 		action_prev = np.asarray(action_prev)
 		action = np.asarray(action)
+		reward = np.asarray(reward)
 
 		# first train the combined model
-		self.model_combined.fit(x=[state_prev, image], y=[action_prev, action],
-			batch_size=32, epochs=8, shuffle=True)
+		# self.model_combined.fit(x=[state_prev, image], y=[action_prev, action],
+		# 	batch_size=32, epochs=8, shuffle=True)
+		self.model_combined.fit(x=[state_prev, image, action], y=[action_prev, reward],
+			batch_size=64, epochs=1, shuffle=True)
 		
 		# then the forward model
 		self.model_forward.fit(x=[state_prev, action_prev], y=state,
-			batch_size=32, epochs=8, shuffle=True)
+			batch_size=64, epochs=1, shuffle=True)
 
 	def save_model(self, filename_prefix):
 		self.model_image.save("{}_image.h5".format(filename_prefix))
@@ -258,6 +334,7 @@ class Model:
 		self.model_action.save("{}_action.h5".format(filename_prefix))
 		self.model_forward.save("{}_forward.h5".format(filename_prefix))
 		self.model_inverse.save("{}_inverse.h5".format(filename_prefix))
+		self.model_reward.save("{}_reward.h5".format(filename_prefix))
 	
 	def load_model(self, filename_prefix):
 		self.model_image = keras.models.load_model("{}_image.h5".format(filename_prefix))
@@ -265,5 +342,6 @@ class Model:
 		self.model_action = keras.models.load_model("{}_action.h5".format(filename_prefix))
 		self.model_forward = keras.models.load_model("{}_forward.h5".format(filename_prefix))
 		self.model_inverse = keras.models.load_model("{}_inverse.h5".format(filename_prefix))
+		self.model_reward = keras.models.load_model("{}_reward.h5".format(filename_prefix))
 
 		self.combine_model()
