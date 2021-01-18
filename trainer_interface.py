@@ -166,9 +166,25 @@ class TrainerInterface:
 
 	def pick_top_replay_entries(self):
 		return self.memory.get_best_entries(int(len(self.memory.sequence)/2))
+
+	def get_action_reward(self, action):
+		reward_action = 0.0
+
+		# by default, penalize from weapon change actions
+		for i in range(7, 14):
+			if action[i]:
+				reward_action -= 1.0
+
+		# also penalize for pressing forward+back or right+left simultaneously
+		if action[3] == action[4]:
+			reward_action -= 1.0
+		if action[5] == action[6]:
+			reward_action -= 1.0
+		
+		return reward_action
 	
-	def mix_reward(self, reward_model, reward_game, reward_system):
-		return reward_model + reward_game + reward_system
+	def mix_reward(self, reward_model, reward_game, reward_system, reward_action):
+		return reward_model + reward_game + reward_system + reward_action
 
 	def step(self, game, episode_id):
 		state_game = game.get_state()
@@ -191,7 +207,10 @@ class TrainerInterface:
 		# Fetch rest of the rewards from our own reward system
 		reward_system = self.reward.get_reward(game)
 
-		reward = self.mix_reward(reward_model, reward_game, reward_system)
+		# reward based on the action picked
+		reward_action = self.get_action_reward(action)
+
+		reward = self.mix_reward(reward_model, reward_game, reward_system, reward_action)
 
 		# update cumulative reward
 		self.reward_cum += reward;

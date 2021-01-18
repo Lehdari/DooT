@@ -41,5 +41,5 @@ class TrainerSimple(TrainerInterface):
         # return self.memory.get_best_clutch(256) + list(self.memory.get_best_entries(128))
         return self.memory.sequence
 
-    def mix_reward(self, reward_model, reward_game, reward_system):
-            return reward_model*20.0 + reward_game + reward_system
+    def mix_reward(self, reward_model, reward_game, reward_system, reward_action):
+            return reward_model*20.0 + reward_game + reward_system + reward_action
