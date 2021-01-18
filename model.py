@@ -11,8 +11,8 @@ from utils import *
 class Model:
 	def __init__(self):
 		self.initializer = initializers.RandomNormal(stddev=0.07)
-		self.state_size = 128
-		self.image_enc_size = 256
+		self.state_size = 1024
+		self.image_enc_size = 1024
 
 		self.state = np.zeros((self.state_size,))
 		self.action_predict_step_size = 0.01
@@ -77,9 +77,9 @@ class Model:
 		x = layers.Conv2D(32, (1, 1), kernel_initializer=self.initializer,
 			activation="relu")(x)
 		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Conv2D(16, (1, 1), kernel_initializer=self.initializer,
-			activation="relu")(x)
-		x = layers.BatchNormalization(axis=-1)(x)
+		# x = layers.Conv2D(16, (1, 1), kernel_initializer=self.initializer,
+		# 	activation="relu")(x)
+		# x = layers.BatchNormalization(axis=-1)(x)
 		x = layers.Flatten()(x)
 
 		self.model_image_o_image_enc = self.module_dense(x, self.image_enc_size)
@@ -96,17 +96,18 @@ class Model:
 		# concatenate image encoding and layer 
 		x = layers.concatenate([self.model_state_i_state, self.model_state_i_image_enc])
 
-		x = self.module_dense(x, 1024, dropout=0.5)
-		x = self.module_dense(x, 512, dropout=0.3)
-		x = self.module_dense(x, self.state_size*4, dropout=0.1)
-		y = self.module_dense(x, self.state_size*2)
+		x = self.module_dense(x, 2048, dropout=0.5)
+		x = self.module_dense(x, 1024, dropout=0.3)
+		x = self.module_dense(x, 1024, dropout=0.1)
+		x = self.module_dense(x, 1024)
+		y = self.module_dense(x, self.state_size)
 
 		# state output
 		self.model_state_o_state =\
-			layers.Dense(self.state_size,  kernel_initializer=self.initializer,\
+			layers.Dense(self.state_size,  kernel_initializer=self.initializer,
 			activation="tanh")(y)
 		
-		x = self.module_dense(x, self.state_size*2)
+		x = self.module_dense(x, self.state_size)
 
 		# gate output value for previous state feedthrough
 		self.model_state_o_gate_prev =\
@@ -128,10 +129,10 @@ class Model:
 		self.model_action_i_state = keras.Input(shape=(self.state_size))
 
 		x = self.module_dense(self.model_action_i_state, 1024, dropout=0.5)
-		x = self.module_dense(x, 512, dropout=0.3)
-		x = self.module_dense(x, 256, dropout=0.1)
+		x = self.module_dense(x, 1024, dropout=0.3)
+		x = self.module_dense(x, 512, dropout=0.1)
+		x = self.module_dense(x, 256)
 		x = self.module_dense(x, 128)
-		x = self.module_dense(x, 64)
 
 		self.model_action_o_action = layers.Dense(15, kernel_initializer=self.initializer,\
 			activation="tanh")(x)
@@ -148,10 +149,9 @@ class Model:
 
 		x = layers.concatenate([self.model_forward_i_state, self.model_forward_i_action])
 
-		x = self.module_dense(x, self.state_size*8, dropout=0.5)
-		x = self.module_dense(x, self.state_size*4, dropout=0.3)
-		x = self.module_dense(x, self.state_size*4, dropout=0.1)
-		x = self.module_dense(x, self.state_size*2)
+		x = self.module_dense(x, self.state_size*2, dropout=0.5)
+		x = self.module_dense(x, self.state_size, dropout=0.3)
+		x = self.module_dense(x, self.state_size, dropout=0.1)
 
 		self.model_forward_o_state =\
 			layers.Dense(self.state_size,  kernel_initializer=self.initializer,\
@@ -169,10 +169,11 @@ class Model:
 
 		x = layers.concatenate([self.model_inverse_i_state1, self.model_inverse_i_state2])
 
-		x = self.module_dense(x, 8*self.state_size, dropout=0.4)
-		x = self.module_dense(x, 4*self.state_size, dropout=0.2)
-		x = self.module_dense(x, 2*self.state_size, dropout=0.1)
-		x = self.module_dense(x, self.state_size)
+		x = self.module_dense(x, self.state_size*2, dropout=0.5)
+		x = self.module_dense(x, self.state_size, dropout=0.3)
+		x = self.module_dense(x, self.state_size, dropout=0.1)
+		x = self.module_dense(x, 256)
+		x = self.module_dense(x, 64)
 
 		self.model_inverse_o_action = layers.Dense(15, kernel_initializer=self.initializer,
 			activation="tanh")(x)
@@ -189,11 +190,11 @@ class Model:
 
 		x = layers.concatenate([self.model_reward_i_state, self.model_reward_i_action])
 
-		x = self.module_dense(x, self.state_size*8, dropout=0.5)
-		x = self.module_dense(x, self.state_size*4, dropout=0.3)
-		x = self.module_dense(x, self.state_size*2, dropout=0.1)
-		x = self.module_dense(x, self.state_size)
-		x = self.module_dense(x, self.state_size/2)
+		x = self.module_dense(x, self.state_size, dropout=0.5)
+		x = self.module_dense(x, self.state_size/2, dropout=0.3)
+		x = self.module_dense(x, self.state_size/2, dropout=0.1)
+		x = self.module_dense(x, 256)
+		x = self.module_dense(x, 64)
 
 		self.model_reward_o_reward =\
 			layers.Dense(1,  kernel_initializer=self.initializer)(x)
@@ -236,7 +237,7 @@ class Model:
 
 		self.model_forward.compile(
 			loss="mean_squared_error",
-			optimizer=keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999)
+			optimizer=keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
 		)
 
 	def advance(self, image, action_prev):
