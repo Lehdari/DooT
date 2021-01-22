@@ -55,36 +55,15 @@ class Model:
 	def create_image_model(self, n_channels):
 		self.model_image_i_image = keras.Input(shape=(240, 320, n_channels))
 
-		x = self.module_conv(self.model_image_i_image, 16, 32, dropout=0.4) #120x160
-		x = self.module_conv(x, 64, 64, dropout=0.3) #60x80
-		x = self.module_conv(x, 128, 128, dropout=0.2) #30x40
+		x = self.module_conv(self.model_image_i_image, 32, 64,
+			k1=(3,2), s1=(3,2), k2=(3,3), s2=(1,2), dropout=0.4) #80x80
+		x = self.module_conv(x, 128, 128, dropout=0.3) #40x40
+		x = self.module_conv(x, 256, 256, dropout=0.2) #20x20
+		x = self.module_conv(x, 512, 512, dropout=0.1) #10x10
+		x = self.module_conv(x, 1024, 1024) #5x5
+		x = self.module_conv(x, 1024, 1024, s1=(1,1), p1="valid", p2="valid") #1x1
+		self.model_image_o_image_enc = layers.Flatten()(x)
 
-		x = layers.Conv2D(256, (3, 3), padding="same", kernel_initializer=self.initializer,
-			strides=(2,2), activation="relu")(x) #15x20
-		x = layers.Conv2D(256, (2, 3), kernel_initializer=self.initializer,
-			activation="relu")(x) #14x18
-		x = layers.BatchNormalization(axis=-1)(x)
-
-		x = self.module_conv(x, 512, 512, k2=(1, 1)) #7x9
-
-		x = layers.Conv2D(256, (1, 1), kernel_initializer=self.initializer,
-			activation="relu")(x)
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Conv2D(128, (1, 1), kernel_initializer=self.initializer,
-			activation="relu")(x)
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Conv2D(64, (1, 1), kernel_initializer=self.initializer,
-			activation="relu")(x)
-		x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Conv2D(32, (1, 1), kernel_initializer=self.initializer,
-			activation="relu")(x)
-		x = layers.BatchNormalization(axis=-1)(x)
-		# x = layers.Conv2D(16, (1, 1), kernel_initializer=self.initializer,
-		# 	activation="relu")(x)
-		# x = layers.BatchNormalization(axis=-1)(x)
-		x = layers.Flatten()(x)
-
-		self.model_image_o_image_enc = self.module_dense(x, self.image_enc_size)
 		self.model_image = keras.Model(
 			inputs=self.model_image_i_image,
 			outputs=self.model_image_o_image_enc,
