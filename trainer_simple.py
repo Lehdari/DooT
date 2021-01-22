@@ -1,11 +1,17 @@
 from trainer_interface import *
 from utils import *
 import random
+import math
 
 
 class TrainerSimple(TrainerInterface):
+    def episode_reset(self):
+        TrainerInterface.episode_reset(self)
+        self.memory.discount_factor = min(1.0-math.exp(-self.episode_id/100.0), 0.995)
+        print("memory.discount_factor: {}".format(self.memory.discount_factor))
+
     def pick_action(self, game):
-        if self.episode_id % 4 == 3:
+        if self.episode_id % 3 == 3:
             return self.model.predict_worst_action()
         else:
             return self.model.predict_action()
