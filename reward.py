@@ -110,7 +110,7 @@ class Reward():
         self.weapon5_prev = weapon5
         self.weapon6_prev = weapon6
 
-        return ammo_reward + weapon_reward * 100.0
+        return ammo_reward * 0.5 + weapon_reward * 100.0
 
     def get_combat_reward(self, game):
         health = game.get_game_variable(vzd.HEALTH)
@@ -176,11 +176,31 @@ class Reward():
         start_dist_reward = dist_start - self.dist_start_prev
         self.dist_start_prev = dist_start
         return start_dist_reward
-    
+
+    def get_action_reward(self, action):
+        reward_action = 0.0
+
+        # by default, penalize from weapon change actions
+        for i in range(7, 14):
+            if action[i]:
+                reward_action -= 1.0
+
+        # also penalize for pressing forward+back or right+left simultaneously
+        if action[3] and action[4]:
+            reward_action -= 1.0
+        if action[5] and action[6]:
+            reward_action -= 1.0
+        
+        # encourage attacking
+        if action[0]:
+            reward_action += 1.0
+
+        return reward_action
+
     def get_misc_reward(self, game):
         return game.get_game_variable(vzd.ATTACK_READY) - 1.0
 
-    def get_reward(self, game):
+    def get_reward(self, game, action):
         player_pos = get_player_pos(game)
 
         living_reward = 0.0
@@ -194,6 +214,8 @@ class Reward():
         item_reward = self.get_item_reward(game)
 
         combat_reward = self.get_combat_reward(game)
+        
+        action_reward = self.get_action_reward(action)
 
         misc_reward = self.get_misc_reward(game)
         #print(misc_reward)
@@ -205,6 +227,7 @@ class Reward():
             2.0*exploration_reward +\
             0.5*item_reward +\
             2.0*combat_reward +\
+            1.0*action_reward +\
             1.0*misc_reward
     
     def get_distance(self, game):

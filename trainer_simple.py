@@ -38,8 +38,9 @@ class TrainerSimple(TrainerInterface):
         #         return mutate_action(self.action_prev, 3, weapon_switch_prob=0.1)
 
     def pick_top_replay_entries(self):
-        # return self.memory.get_best_clutch(256) + list(self.memory.get_best_entries(128))
+        #return self.memory.get_best_clutch(256) + list(self.memory.get_best_entries(128))
         return self.memory.sequence
 
-    def mix_reward(self, reward_model, reward_game, reward_system, reward_action):
-            return reward_model*20.0 + reward_game + reward_system + reward_action
+    def mix_reward(self, reward_model, reward_game, reward_system):
+        return reward_model*20.0 + reward_game + reward_system
+        #return reward_action
