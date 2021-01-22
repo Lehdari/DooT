@@ -37,11 +37,13 @@ class Model:
 		
 		return x
 	
-	def module_conv(self, x, n1, n2, k1=(3,3), k2=(3,3), dropout=None):
-		x = layers.Conv2D(n1, k1, padding="same", kernel_initializer=self.initializer,
-			strides=(2,2), activation="relu")(x)
-		x = layers.Conv2D(n2, k2, padding="same", kernel_initializer=self.initializer,
-			activation="relu")(x)
+	def module_conv(self, x, n1, n2, k1=(3,3), k2=(3,3), s1=(2,2), s2=(1,1),
+		p1="same", p2="same", dropout=None):
+
+		x = layers.Conv2D(n1, k1, padding=p1, kernel_initializer=self.initializer,
+			strides=s1, activation="relu")(x)
+		x = layers.Conv2D(n2, k2, padding=p2, kernel_initializer=self.initializer,
+			strides=s2, activation="relu")(x)
 
 		x = layers.BatchNormalization(axis=-1)(x)
 
