@@ -227,7 +227,7 @@ class Reward():
             2.0*exploration_reward +\
             0.5*item_reward +\
             2.0*combat_reward +\
-            1.0*action_reward +\
+            0.0*action_reward +\
             1.0*misc_reward
     
     def get_distance(self, game):

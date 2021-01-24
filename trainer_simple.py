@@ -8,13 +8,21 @@ class TrainerSimple(TrainerInterface):
     def episode_reset(self):
         TrainerInterface.episode_reset(self)
         self.memory.discount_factor = min(1.0-math.exp(-self.episode_id/100.0), 0.995)
-        print("memory.discount_factor: {}".format(self.memory.discount_factor))
+        #print("memory.discount_factor: {}".format(self.memory.discount_factor))
 
     def pick_action(self, game):
-        if self.episode_id % 3 == 3:
-            return self.model.predict_worst_action()
+        epsilon = math.exp(-self.episode_id/250.0)
+
+        action = get_null_action()
+        if self.episode_id % 3 == 2:
+            action = self.model.predict_worst_action()
         else:
-            return self.model.predict_action()
+            action = self.model.predict_action()
+
+        if random.random() < epsilon:
+            action = mutate_action(action, 2, weapon_switch_prob=0.5-0.45*epsilon)
+        
+        return action
         
         # if self.episode_id < 128:
         #     return get_random_action(turn_delta_sigma=5.0)

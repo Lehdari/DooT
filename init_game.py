@@ -1,7 +1,7 @@
 import vizdoom as vzd
 
 
-def init_game():
+def init_game(episode_length):
     # Create DoomGame instance. It will run the game and communicate with you.
     game = vzd.DoomGame()
 
@@ -92,7 +92,7 @@ def init_game():
     game.add_available_game_variable(vzd.GameVariable.ATTACK_READY)
 
     # How many ticks the episode is at maximum
-    game.set_episode_timeout(1024)
+    game.set_episode_timeout(episode_length)
 
     # Makes episodes start after 14 tics (~after raising the weapon)
     game.set_episode_start_time(14)
