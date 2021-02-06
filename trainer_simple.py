@@ -7,22 +7,29 @@ import math
 class TrainerSimple(TrainerInterface):
     def episode_reset(self):
         TrainerInterface.episode_reset(self)
-        self.memory.discount_factor = min(1.0-math.exp(-self.episode_id/100.0), 0.995)
+        self.memory.discount_factor = min(1.0-math.exp(-self.episode_id/256.0), 0.995)
         #print("memory.discount_factor: {}".format(self.memory.discount_factor))
 
+        self.epsilon = math.exp(-self.episode_id/128.0)
+        print("epsilon: {}".format(self.epsilon))
+
     def pick_action(self, game):
-        epsilon = math.exp(-self.episode_id/250.0)
+        return get_random_action(turn_delta_sigma=5.0, weapon_switch_prob=0.1)
 
-        action = get_null_action()
-        if self.episode_id % 3 == 2:
-            action = self.model.predict_worst_action()
-        else:
-            action = self.model.predict_action()
+        # action = get_null_action()
+        # if self.episode_id % 2 == 1:
+        #     action = self.model.predict_worst_action()
+        # else:
+        #     action = self.model.predict_action()
 
-        if random.random() < epsilon:
-            action = mutate_action(action, 2, weapon_switch_prob=0.5-0.45*epsilon)
+        # if random.random() < self.epsilon:
+        #     action = get_random_action(turn_delta_sigma=5.0,
+        #         weapon_switch_prob=0.5-0.4*self.epsilon)
+        #     #action = mutate_action(action, 2, weapon_switch_prob=0.5-0.4*epsilon)
         
-        return action
+        # return action
+
+
         
         # if self.episode_id < 128:
         #     return get_random_action(turn_delta_sigma=5.0)

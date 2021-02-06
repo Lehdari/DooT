@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 import random
 import math
+import time
 from scipy.signal import argrelextrema
 from utils import *
 
@@ -112,9 +113,11 @@ class TrainerInterface:
 		self.episode_id = 0
 		self.episode_reset()
 
-		self.replay_n_entries = episode_length
 		self.replay_reset()
+		self.set_episode_length(episode_length)
 
+	def set_episode_length(self, episode_length):
+		self.episode_length = episode_length
 		self.replay_images = tf.Variable(tf.zeros((episode_length, 240, 320, 3)))
 		self.replay_actions = tf.Variable(tf.zeros((episode_length, 15)))
 		self.replay_rewards_step = tf.Variable(tf.zeros((episode_length,)))
@@ -169,12 +172,15 @@ class TrainerInterface:
 
 		screen_buf = state_game.screen_buffer
 
-		# advance the model state using the screen buffer
-		self.model.advance(screen_buf)
-		reward_model = 0.0
-
 		# pick an action to perform
 		action = self.pick_action(game)
+
+		# action_print = np.where(action, 1, 0)
+		# print("{} {:8.3f}".format(action_print[0:14], action[14]), end="\r")
+		# time.sleep(2.0)
+
+		# advance the model state using the screen buffer
+		reward_model = self.model.advance(screen_buf, action)
 
 		# Only pick up the death penalty from the builtin reward system
 		reward_game = game.make_action(action)
@@ -197,7 +203,7 @@ class TrainerInterface:
 		#self.memory.add_entry(screen_buf, action, reward)
 
 		self.replay_images[frame_id].assign(screen_buf)
-		self.replay_actions[frame_id].assign(action)
+		self.replay_actions[frame_id].assign(convert_action_to_continuous(action))
 		self.replay_rewards_step[frame_id].assign(reward)
 		self.n_entries += 1
 
@@ -213,17 +219,17 @@ class TrainerInterface:
 			#top_entries = self.pick_top_replay_entries()
 
 			print("\nEpisode {} finished\naverage reward: {:10.3f}"
-				.format(episode_id, self.reward_cum / self.replay_n_entries))
+				.format(episode_id, self.reward_cum / self.episode_length))
 
 			# add top entries to the training buffers
 			#for e in top_entries:
 			#	self.save_replay_entry(e)
 
 			# Sufficient number of entries gathered, time to train
-			if self.n_entries == self.replay_n_entries:
+			if self.n_entries == self.episode_length:
 				# average reward
-				self.replay_rewards_avg = tf.ones((self.replay_n_entries,)) *\
-					(self.reward_cum / self.replay_n_entries)
+				self.replay_rewards_avg = tf.ones((self.episode_length,)) *\
+					(self.reward_cum / self.episode_length)
 				# train
 				self.model.train(self.replay_images, self.replay_actions, self.replay_rewards_step,
 					self.replay_rewards_avg)
