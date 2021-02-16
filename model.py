@@ -4,14 +4,31 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import initializers
 from tensorflow.keras import activations
+from tensorflow.keras import regularizers
 import random
 from utils import *
+from tensorflow.compat.v1 import ConfigProto
+from tensorflow.compat.v1 import InteractiveSession
+
+
+config = ConfigProto()
+config.gpu_options.allow_growth = True
+session = InteractiveSession(config=config)
+
+
+class L2Regularizer(regularizers.Regularizer):
+	def __init__(self, strength):
+		self.strength = tf.Variable(strength)
+
+	@tf.function
+	def __call__(self, x):
+		return self.strength * tf.reduce_mean(tf.square(x))
 
 
 class Model:
 	def __init__(self, episode_length, n_training_epochs):
 		self.initializer = initializers.RandomNormal(stddev=0.02)
-		self.optimizer = keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
+		self.optimizer = keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999)
 		self.loss_function = keras.losses.MeanSquaredError()
 
 		self.state_size = 256
@@ -29,24 +46,37 @@ class Model:
 		self.create_forward_model()
 		self.create_inverse_model()
 		self.create_reward_model()
-		self.create_recurrent_module()
+		#self.create_recurrent_module()
 
+		self.weight_loss_model_image = 1.0 # TODO TEMP
+		self.weight_loss_model_state = 1.0 #TODO TEMP
+		self.loss_lowpass = None#TODO TEMP
 	
-	def module_dense(self, x, n, alpha=0.01, dropout=None):
-		# if dropout is not None:
-		# 	x = layers.Dropout(dropout)(x)
-
+	def module_dense(self, x, n, x2=None, n2=None, alpha=0.01):
 		use_shortcut = n == x.shape[1]
 
 		if use_shortcut:
 			y = x
 
-		x = layers.Dense(n, kernel_initializer=self.initializer, use_bias=False)(x)
+		# enable concatenation if auxiliary input is provided
+		if x2 is not None:
+			x = layers.Concatenate()([x, x2])
+		
+		# double layer model
+		if n2 is not None:
+			x = layers.Dense(n2, kernel_initializer=self.initializer, use_bias=False,
+				kernel_regularizer=L2Regularizer(1.0e-6))(x)
+			x = layers.LayerNormalization(axis=-1,
+				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
+				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(x)
+			x = activations.relu(x, alpha=alpha)
+
+		x = layers.Dense(n, kernel_initializer=self.initializer, use_bias=False,
+			kernel_regularizer=L2Regularizer(1.0e-6))(x)
 		x = layers.LayerNormalization(axis=-1,
 			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
 			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(x)
 		x = activations.relu(x, alpha=alpha)
-		# x = layers.PReLU(alpha_initializer=self.initializer)(x)
 
 		if use_shortcut:
 			return layers.Add()([x, y])
@@ -54,11 +84,7 @@ class Model:
 			return x
 	
 	def module_conv(self, x, n1, n2, k1=(3,3), k2=(3,3), s1=(2,2), s2=(1,1),
-		p1="same", p2="same", bn2=True,
-		alpha=0.01, dropout=None):
-
-		# if dropout is not None:
-		# 	x = layers.Dropout(dropout)(x)
+		p1="same", p2="same", bn2=True, alpha=0.01):
 
 		#shortcut by avg pooling
 		pool_x_size = s1[0]*s2[0]
@@ -70,23 +96,24 @@ class Model:
 			pool_x_size += k2[0]-1
 			pool_y_size += k2[1]-1
 		y = layers.AveragePooling2D((pool_x_size, pool_y_size))(x)
-		y = layers.Conv2D(n2, (1, 1), kernel_initializer=self.initializer, use_bias=False)(y)
+		y = layers.Conv2D(n2, (1, 1), kernel_initializer=self.initializer, use_bias=False,
+			kernel_regularizer=L2Regularizer(5.0e-4))(y)
 		y = layers.LayerNormalization(axis=-1,
 			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
 			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(y)
-		#y = activations.relu(y, alpha=alpha)
 
 		x = layers.Conv2D(n1, k1, padding=p1, kernel_initializer=self.initializer,
-			strides=s1, use_bias=False)(x)
+			strides=s1, use_bias=False,
+			kernel_regularizer=L2Regularizer(5.0e-4))(x)
 		x = layers.LayerNormalization(axis=-1,
 			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
 			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(x)
 		x = activations.relu(x, alpha=alpha)
-		# x = layers.PReLU(alpha_initializer=self.initializer)(x)
 
 		if bn2:
 			x = layers.Conv2D(n2, k2, padding=p2, kernel_initializer=self.initializer,
-			strides=s2, use_bias=False)(x)
+			strides=s2, use_bias=False,
+			kernel_regularizer=L2Regularizer(5.0e-4))(x)
 			x = layers.LayerNormalization(axis=-1,
 			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
 			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(x)
@@ -94,7 +121,6 @@ class Model:
 			x = layers.Conv2D(n2, k2, padding=p2, kernel_initializer=self.initializer,
 			strides=s2)(x)
 		x = activations.relu(x, alpha=alpha)
-		# x = layers.PReLU(alpha_initializer=self.initializer)(x)
 
 		return layers.Add()([x, y])
 	
@@ -103,10 +129,10 @@ class Model:
 
 		x = self.module_conv(self.model_image_i_image,
 			8*feature_multiplier, 16*feature_multiplier,
-			k1=(3,2), s1=(3,2), k2=(3,3), s2=(1,2), dropout=0.3) #80x80
-		x = self.module_conv(x, 32*feature_multiplier, 32*feature_multiplier, dropout=0.3) #40x40
-		x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier, dropout=0.2) #20x20
-		x = self.module_conv(x, 128*feature_multiplier, 128*feature_multiplier, dropout=0.1) #10x10
+			k1=(3,2), s1=(3,2), k2=(3,3), s2=(1,2)) #80x80
+		x = self.module_conv(x, 32*feature_multiplier, 32*feature_multiplier) #40x40
+		x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier) #20x20
+		x = self.module_conv(x, 128*feature_multiplier, 128*feature_multiplier) #10x10
 		x = self.module_conv(x, 256*feature_multiplier, 256*feature_multiplier, k2=(1,1)) #5x5
 		x = self.module_conv(x, 256*feature_multiplier, 256*feature_multiplier,
 			s1=(1,1), p1="valid", p2="valid", bn2=False) #1x1
@@ -114,7 +140,7 @@ class Model:
 		# use regularizers for image encoding to avoid issue of output saturation
 		self.model_image_o_image_enc = layers.Dense(self.image_enc_size,
 			kernel_initializer=self.initializer,
-			activity_regularizer=tf.keras.regularizers.l2(1.0/self.image_enc_size),
+			activity_regularizer=L2Regularizer(1.0),
 			activation="tanh")(x)
 
 		self.model_image = keras.Model(
@@ -128,20 +154,21 @@ class Model:
 		self.model_state_i_image_enc = keras.Input(shape=(self.image_enc_size))
 		
 		# concatenate image encoding and layer 
-		x = layers.concatenate([self.model_state_i_state, self.model_state_i_image_enc])
+		#x = layers.concatenate([self.model_state_i_state, self.model_state_i_image_enc])
 
-		# intermediate layers
-		x = self.module_dense(x, self.state_size*2, dropout=0.5)
-		x = self.module_dense(x, self.state_size, dropout=0.3)
+		# first layer uses concatenative dense module
+		x = self.module_dense(self.model_state_i_state, self.state_size,
+			x2=self.model_state_i_image_enc, n2=self.state_size+self.image_enc_size)
+		#x = self.module_dense(x, self.state_size)
 
 		# state output
-		s = self.module_dense(x, self.state_size, dropout=0.1)
+		s = self.module_dense(x, self.state_size)
 		s = layers.Dense(self.state_size,  kernel_initializer=self.initializer,
-			activity_regularizer=tf.keras.regularizers.l2(1.0/self.state_size),
+			activity_regularizer=L2Regularizer(1.0),
 			activation="tanh")(s)
 		
 		# gate output value for previous state feedthrough
-		g1 = self.module_dense(x, self.state_size, dropout=0.1)
+		g1 = self.module_dense(x, self.state_size)
 		g1 = layers.Dense(self.state_size, kernel_initializer=self.initializer,
 			activation="sigmoid")(g1)
 
@@ -159,13 +186,13 @@ class Model:
 			outputs=self.model_state_o_state,
 			name="model_state")
 		self.model_state.summary()
-
+	'''
 	def create_action_model(self):
 		self.model_action_i_state = keras.Input(shape=(self.state_size))
 
-		x = self.module_dense(self.model_action_i_state, 1024, dropout=0.5)
-		x = self.module_dense(x, 1024, dropout=0.3)
-		x = self.module_dense(x, 512, dropout=0.1)
+		x = self.module_dense(self.model_action_i_state, 1024)
+		x = self.module_dense(x, 1024)
+		x = self.module_dense(x, 512)
 		x = self.module_dense(x, 256)
 		x = self.module_dense(x, 128)
 
@@ -177,47 +204,64 @@ class Model:
 			outputs=self.model_action_o_action,
 			name="model_action")
 		self.model_action.summary()
-	
+	'''
 	def create_forward_model(self):
-		self.model_forward_i_image_enc = keras.Input(shape=(self.image_enc_size))
+		self.model_forward_i_state = keras.Input(shape=(self.state_size))
 		self.model_forward_i_action = keras.Input(shape=(15))
 
-		x = layers.concatenate([self.model_forward_i_image_enc, self.model_forward_i_action])
+		x = layers.concatenate([self.model_forward_i_state, self.model_forward_i_action])
 
-		x = self.module_dense(x, self.image_enc_size*2, dropout=0.5)
-		x = self.module_dense(x, self.image_enc_size, dropout=0.3)
-		x = self.module_dense(x, self.image_enc_size, dropout=0.1)
+		x = self.module_dense(x, self.state_size, n2=self.state_size)
 
-		self.model_forward_o_image_enc =\
-			layers.Dense(self.image_enc_size,  kernel_initializer=self.initializer,\
+		self.model_forward_o_state =\
+			layers.Dense(self.state_size,  kernel_initializer=self.initializer,\
 			activation="tanh")(x)
 
 		self.model_forward = keras.Model(
-			inputs=[self.model_forward_i_image_enc, self.model_forward_i_action],
-			outputs=self.model_forward_o_image_enc,
+			inputs=[self.model_forward_i_state, self.model_forward_i_action],
+			outputs=self.model_forward_o_state,
 			name="model_forward")
 		self.model_forward.summary()
 		#self.model_forward.compile(loss=self.loss_function, optimizer=self.optimizer)
 	
+	'''
 	def create_inverse_model(self):
-		self.model_inverse_i_image_enc1 = keras.Input(shape=(self.image_enc_size))
-		self.model_inverse_i_image_enc2 = keras.Input(shape=(self.image_enc_size))
+		self.model_inverse_i_state1 = keras.Input(shape=(self.state_size))
+		self.model_inverse_i_state2 = keras.Input(shape=(self.state_size))
 
-		#x = layers.concatenate([self.model_inverse_i_image_enc1, self.model_inverse_i_image_enc2])
-		x = layers.Subtract()([self.model_inverse_i_image_enc1, self.model_inverse_i_image_enc2])
+		x = layers.Subtract()([self.model_inverse_i_state1, self.model_inverse_i_state2])
 
-		x = self.module_dense(x, self.image_enc_size, dropout=0.5)
-		x = self.module_dense(x, self.image_enc_size, dropout=0.3)
-		x = self.module_dense(x, self.image_enc_size, dropout=0.1)
-		x = self.module_dense(x, self.image_enc_size/2)
-		if int(self.image_enc_size/4) >= 64:
-			x = self.module_dense(x, self.image_enc_size/4)
+		x = self.module_dense(x, self.state_size, n2=self.state_size)
+		x = self.module_dense(x, self.state_size/2)
+		if int(self.state_size/4) >= 64:
+			x = self.module_dense(x, self.state_size/4)
 
 		self.model_inverse_o_action = layers.Dense(15, kernel_initializer=self.initializer,
 			activation="tanh")(x)
 
 		self.model_inverse = keras.Model(
-			inputs=[self.model_inverse_i_image_enc1, self.model_inverse_i_image_enc2],
+			inputs=[self.model_inverse_i_state1, self.model_inverse_i_state2],
+			outputs=self.model_inverse_o_action,
+			name="model_inverse")
+		self.model_inverse.summary()
+	'''
+
+	def create_inverse_model(self):
+		self.model_inverse_i_states = keras.Input(shape=(self.state_size, 1, 9))
+
+		x = self.module_conv(self.model_inverse_i_states, 16, 2, k1=(1,1), k2=(1,1), s1=(1,1))
+		x = layers.Flatten()(x)
+
+		x = self.module_dense(x, self.state_size, n2=self.state_size*2)
+		x = self.module_dense(x, self.state_size/2)
+		if int(self.state_size/4) >= 64:
+			x = self.module_dense(x, self.state_size/4)
+
+		self.model_inverse_o_action = layers.Dense(15, kernel_initializer=self.initializer,
+			activation="tanh")(x)
+
+		self.model_inverse = keras.Model(
+			inputs=self.model_inverse_i_states,
 			outputs=self.model_inverse_o_action,
 			name="model_inverse")
 		self.model_inverse.summary()
@@ -228,19 +272,17 @@ class Model:
 
 		x = layers.concatenate([self.model_reward_i_state, self.model_reward_i_action])
 
-		x = self.module_dense(x, self.state_size, dropout=0.5)
-		x = self.module_dense(x, self.state_size/2, dropout=0.3)
-		x = self.module_dense(x, self.state_size/2, dropout=0.1)
+		# x = self.module_dense(x, self.image_enc_size, n2=self.image_enc_size)
 
-		y = self.module_dense(x, self.state_size/4)
-		if int(self.image_enc_size/8) >= 64:
-			y = self.module_dense(y, self.image_enc_size/8)
+		y = self.module_dense(x, self.state_size/2)
+		if int(self.image_enc_size/4) >= 64:
+			y = self.module_dense(y, self.image_enc_size/4)
 		# state step reward
 		self.model_reward_o_reward_step = layers.Dense(1,  kernel_initializer=self.initializer)(y)
 		
-		x = self.module_dense(x, self.state_size/4)
-		if int(self.image_enc_size/8) >= 64:
-			x = self.module_dense(x, self.image_enc_size/8)
+		x = self.module_dense(x, self.state_size/2)
+		if int(self.image_enc_size/4) >= 64:
+			x = self.module_dense(x, self.image_enc_size/4)
 		# average reward
 		self.model_reward_o_reward_avg = layers.Dense(1,  kernel_initializer=self.initializer)(x)
 
@@ -285,13 +327,15 @@ class Model:
 			optimizer=keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
 		)
 	'''
+	'''
 	def create_recurrent_module(self):
-		self.recurrent_module_i_reward_sum = keras.Input(shape=(1))
+		#self.recurrent_module_i_reward_sum = keras.Input(shape=(1))
 
-		self.recurrent_module_o_image_enc = self.model_image(self.model_image_i_image)
+		#self.recurrent_module_o_image_enc = self.model_image(self.model_image_i_image)
+		self.recurrent_module_i_image_enc = keras.Input(shape=(self.image_enc_size))
 
 		self.recurrent_module_o_state = self.model_state([
-			self.model_state_i_state, self.recurrent_module_o_image_enc])
+			self.model_state_i_state, self.recurrent_module_i_image_enc])
 		
 		self.recurrent_module_o_action_prev = self.model_inverse([
 			self.model_state_i_state, self.recurrent_module_o_state])
@@ -299,22 +343,22 @@ class Model:
 		self.recurrent_module_o_reward_step, self.recurrent_module_o_reward_avg =\
 			self.model_reward([self.recurrent_module_o_state, self.model_reward_i_action])
 
-		self.recurrent_module_o_reward_sum = layers.Add()([
-			self.recurrent_module_i_reward_sum, self.recurrent_module_o_reward_step])
+		# self.recurrent_module_o_reward_sum = layers.Add()([
+		# 	self.recurrent_module_i_reward_sum, self.recurrent_module_o_reward_step])
 
 		self.recurrent_module = keras.Model(
 			inputs=[
 				self.model_state_i_state,
-				self.recurrent_module_i_reward_sum,
+				#self.recurrent_module_i_reward_sum,
 				#self.model_inverse_i_image_enc1, # encoding of previous image
-				self.model_image_i_image,
+				self.recurrent_module_i_image_enc,
 				self.model_reward_i_action
 			],
 			outputs=[
 				self.recurrent_module_o_state,
-				self.recurrent_module_o_image_enc,
+				#self.recurrent_module_o_image_enc,
 				self.recurrent_module_o_action_prev,
-				self.recurrent_module_o_reward_sum,
+				#self.recurrent_module_o_reward_sum,
 				self.recurrent_module_o_reward_step,
 				self.recurrent_module_o_reward_avg,
 			],
@@ -322,7 +366,7 @@ class Model:
 		)
 		self.recurrent_module.summary()
 		#self.recurrent_module.compile(loss=self.loss_function, optimizer=self.optimizer)
-
+	'''
 	'''
 	def create_sequence_model(self, episode_length):
 		seq_state = tf.zeros(shape=(1,self.state_size))
@@ -431,41 +475,133 @@ class Model:
 		print("W {:8.5f} {:8.5f} ".format(reward_step[0].numpy()[0], reward_avg[0].numpy()[0]), end="")
 		return convert_action_to_mixed(action[0])
 
-	def train_subsequence(self,
+	def train_subsequence_image(self,
 		image, action, reward_step, reward_avg,
-		begin, end,
-		state, reward_sum, image_enc):
+		begin, end, state):
+		n = end-begin
+		state_begin = state
+
+		with tf.GradientTape(persistent=True) as gt:
+			states = [state[0]]
+			for i in range(begin, end):
+				#state_prev = state
+				
+				image_enc = self.model_image(image[i:(i+1)], training=True)
+
+				#ie_max = max(-tf.reduce_min(image_enc), tf.reduce_max(image_enc))
+				# self.weight_loss_model_image =\
+				# 	max(self.weight_loss_model_image*((ie_max / 0.9)*0.01 + 0.99), 0.0001)
+
+				#if i < end-1:
+				state = self.model_state([state, image_enc], training=True)
+				#else:
+				#	state, action_prev_pred, reward_step_pred, reward_avg_pred =\
+				#		self.recurrent_module([state, image_enc, action[i:(i+1)]], training=False)
+				states.append(state[0])
+
+				# state_max = max(-tf.reduce_min(state), tf.reduce_max(state))
+				# self.weight_loss_model_state =\
+				# 	max(self.weight_loss_model_state*((state_max / 0.9)*0.01 + 0.99), 0.0001)
+			
+			action_pred = self.model_inverse(tf.expand_dims(
+				tf.expand_dims(tf.stack(states, axis=-1), axis=1), axis=0), training=True)
+
+			# if end > 1:
+			# 	action_prev = action[end-2:end-1]
+			# else:
+			# 	action_prev = tf.zeros(shape=(1,15))
+
+			#loss_reward = self.loss_function(reward_step[i], reward_step_pred)
+			#loss_reward += self.loss_function(reward_avg[i], reward_avg_pred)
+			#loss_action = self.loss_function(action_prev, action_prev_pred)
+			loss_action = self.loss_function(action[begin], action_pred)
+			loss_model_image = tf.reduce_sum(self.model_image.losses)#*self.weight_loss_model_image
+			loss_model_state = tf.reduce_sum(self.model_state.losses)#*self.weight_loss_model_state
+
+			loss = loss_action + loss_model_image + loss_model_state
+			
+			self.loss_action_sum += loss_action#.numpy()
+			self.loss_sum += loss#.numpy()
+			self.loss_n += 1
+
+			print("I {} / {}".format(i+1, self.episode_length), end="\r")
+		
+		if self.g_model_image == None:
+			self.g_model_image = gt.gradient(loss, self.model_image.trainable_variables)
+		else:
+			gg = gt.gradient(loss, self.model_image.trainable_variables)
+			for i in range(len(self.g_model_image)):
+				self.g_model_image[i] += gg[i]
+		
+		if self.g_model_state == None:
+			self.g_model_state = gt.gradient(loss, self.model_state.trainable_variables)
+		else:
+			gg = gt.gradient(loss, self.model_state.trainable_variables)
+			for i in range(len(self.g_model_state)):
+				self.g_model_state[i] += gg[i]
+		
+		if self.g_model_inverse == None:
+			self.g_model_inverse = gt.gradient(loss, self.model_inverse.trainable_variables)
+		else:
+			gg = gt.gradient(loss, self.model_inverse.trainable_variables)
+			for i in range(len(self.g_model_inverse)):
+				self.g_model_inverse[i] += gg[i]
+		
+		state = self.model_state([state_begin,
+			self.model_image(image[begin:(begin+1)],
+			training=False)], training=False)
+
+		return state
+
+	def train_subsequence_state(self,
+		image, action, reward_step, reward_avg,
+		begin, end, state):
 		g_recurrent_module = []
 		g_model_forward = []
 
 		n = end-begin
 		state_begin = state
-		reward_sum_begin = reward_sum
 
-		with tf.GradientTape() as gt:
+		with tf.GradientTape(persistent=True) as gt:
+			states = [state[0]]
 			for i in range(begin, end):
-				if i > 0:
-					action_prev = action[i-1:i]
-				else:
-					action_prev = tf.zeros(shape=(1,15))
 
-				image_enc_prev = image_enc
 				state_prev = state
-				state, image_enc, action_prev_pred, reward_sum, reward_step_pred, reward_avg_pred =\
-					self.recurrent_module([state, reward_sum, image[i:(i+1)],
-					action[i:(i+1)]], training=True)
 				
-			loss_reward = self.loss_function(reward_step[i], reward_step_pred)
-			loss_reward += self.loss_function(reward_avg[i], reward_avg_pred)
-			loss_action = self.loss_function(action_prev, action_prev_pred)
-			loss_img_enc = self.model_image.losses[0]
-			loss_state = self.model_state.losses[0]
+				with gt.stop_recording():
+					image_enc = self.model_image(image[i:(i+1)], training=False)
+				
+				# if i < end-1:
+				state = self.model_state([state, image_enc], training=True)
+				# else:
+				# 	state, action_prev_pred, reward_step_pred, reward_avg_pred =\
+				# 		self.recurrent_module([state, image_enc, action[i:(i+1)]], training=True)
+				states.append(state[0])
+			
+				state_max = max(-tf.reduce_min(state), tf.reduce_max(state))
+				self.weight_loss_model_state =\
+					max(self.weight_loss_model_state*((state_max / 0.9)*0.01 + 0.99), 0.0001)
+			
+			action_pred = self.model_inverse(tf.expand_dims(
+				tf.expand_dims(tf.stack(states, axis=-1), axis=1), axis=0), training=True)
+			
+			# if end > 1:
+			# 	action_prev = action[end-2:end-1]
+			# else:
+			# 	action_prev = tf.zeros(shape=(1,15))
 
-			#loss = loss_reward + loss_action
-			loss = loss_reward*1.0e-10 + loss_action + loss_img_enc*0.01 + loss_state*0.01
-			self.loss_reward_sum += loss_reward.numpy()
+			# loss_reward = self.loss_function(reward_step[end-1], reward_step_pred)
+			# loss_reward += self.loss_function(reward_avg[end-1], reward_avg_pred)
+			# loss_action = self.loss_function(action_prev, action_prev_pred)
+			loss_action = self.loss_function(action[begin], action_pred)
+			loss_model_state = self.model_state.losses[0]*self.weight_loss_model_state
+
+			# loss = loss_reward*1.0e-10 + loss_action + loss_model_state
+			loss = loss_action + loss_model_state
+			#self.loss_reward_sum += loss_reward.numpy()
 			self.loss_action_sum += loss_action.numpy()
 			self.loss_sum += loss.numpy()
+			self.loss_n += 1
 
 				# if i == 0:
 				# 	g_recurrent_module = gt.gradient(loss, self.recurrent_module.trainable_variables)
@@ -487,24 +623,42 @@ class Model:
 			# 		for j in range(len(g_model_forward)):
 			# 			g_model_forward[j] += gg[j]\
 			
-			print("{} / {}".format(i+1, self.episode_length), end="\r")
+			print("S {} / {} ({:1.10f}, {:1.10f}, {:1.10f}, {:1.10f})".format(i+1,
+				self.episode_length,
+				loss_action.numpy(), loss_model_state.numpy(),
+				self.weight_loss_model_state, state_max), end="\r")
 		
-		g_recurrent_module = gt.gradient(loss, self.recurrent_module.trainable_variables)
+		#g_recurrent_module = gt.gradient(loss, self.recurrent_module.trainable_variables)
+		#g_model_image = gt.gradient(loss, self.model_image.trainable_variables)
+		g_model_state = gt.gradient(loss, self.model_state.trainable_variables)
+		g_model_inverse = gt.gradient(loss, self.model_inverse.trainable_variables)
 
-		self.optimizer.apply_gradients(zip(g_recurrent_module,
-			self.recurrent_module.trainable_variables))
-
-		self.optimizer.apply_gradients(zip(g_model_forward,
-			self.model_forward.trainable_variables))
+		self.optimizer.apply_gradients(zip(g_model_state, self.model_state.trainable_variables))
+		self.optimizer.apply_gradients(zip(g_model_inverse, self.model_inverse.trainable_variables))
 		
-		state, image_enc, action_prev_pred, reward_sum, reward_step_pred, reward_avg_pred =\
-			self.recurrent_module([state_begin, reward_sum_begin, image[begin:(begin+1)],
-			action[begin:(begin+1)]], training=False)
+		# self.optimizer.apply_gradients(zip(g_recurrent_module,
+		# 	self.recurrent_module.trainable_variables))
 
-		return state, reward_sum, image_enc
+		# self.optimizer.apply_gradients(zip(g_model_image,
+		# 	self.model_image.trainable_variables))
+
+		# self.optimizer.apply_gradients(zip(g_model_forward,
+		# 	self.model_forward.trainable_variables))
+		
+		# state, action_prev_pred, reward_step_pred, reward_avg_pred =\
+		# 	self.recurrent_module([state_begin,
+		# 	self.model_image(image[begin:(begin+1)], training=False),
+		# 	action[begin:(begin+1)]], training=False)
+		
+		state = self.model_state([state_begin,
+			self.model_image(image[begin:(begin+1)],
+			training=False)], training=False)
+
+		return state
 
 	def train(self, image, action, reward_step, reward_avg):
-		sequence_length = 4
+		sequence_length_image = 8
+		sequence_length_state = 8
 
 		self.loss_action_avg = 1.0
 		e = 0
@@ -513,21 +667,36 @@ class Model:
 			self.loss_action_sum = 0.0
 			self.loss_forward_sum = 0.0
 			self.loss_sum = 0.0
+			self.loss_n = 0
+
+			self.g_model_image = None
+			self.g_model_state = None
+			self.g_model_inverse = None
 
 			state = tf.zeros(shape=(1,self.state_size))
-			reward_sum = tf.zeros(shape=(1,))
-			image_enc = tf.zeros(shape=(1,self.image_enc_size))
+			for i in range(self.episode_length - sequence_length_image + 1):
+				state = self.train_subsequence_image(image, action,
+					reward_step, reward_avg, i, i+sequence_length_image, state)
+			
+			self.optimizer.apply_gradients(zip(self.g_model_image, self.model_image.trainable_variables))
+			self.optimizer.apply_gradients(zip(self.g_model_state, self.model_state.trainable_variables))
+			self.optimizer.apply_gradients(zip(self.g_model_inverse, self.model_inverse.trainable_variables))
 
-			for i in range(self.episode_length - sequence_length + 1):
-				state, reward_sum, image_enc = self.train_subsequence(
-					image, action, reward_step, reward_avg,
-					i, i+sequence_length, state, reward_sum, image_enc)
+			# state = tf.zeros(shape=(1,self.state_size))
+			# for i in range(self.episode_length - sequence_length_state + 1):
+			# 	state = self.train_subsequence_state(image, action, reward_step, reward_avg,
+			# 		i, i+sequence_length_state, state)
 
-			print("epoch {:2d}: l_reward: {:8.5f}, l_action: {:8.5f} l_total: {:8.5f} l_forward: {:10.9f}".format(
-				e, self.loss_reward_sum / self.episode_length,
-				self.loss_action_sum / self.episode_length,
-				self.loss_sum / self.episode_length,
-				self.loss_forward_sum / self.episode_length))
+			if self.loss_lowpass is None: # TODO TEMP
+				self.loss_lowpass = self.loss_action_sum / self.loss_n
+			else:
+				self.loss_lowpass = 0.99*self.loss_lowpass + 0.01*(self.loss_action_sum / self.loss_n)
+
+			print("epoch {:2d}: l_reward: {:8.5f}, l_action: {:8.5f} l_total: {:8.5f} l_lowpass: {:10.9f}".format(
+				e, self.loss_reward_sum / self.loss_n,
+				self.loss_action_sum / self.loss_n,
+				self.loss_sum / self.loss_n,
+				self.loss_lowpass))
 			
 			e += 1
 		
@@ -549,4 +718,4 @@ class Model:
 		self.model_inverse = keras.models.load_model("{}_inverse.h5".format(filename_prefix))
 		self.model_reward = keras.models.load_model("{}_reward.h5".format(filename_prefix))
 
-		self.create_recurrent_module()
+		#self.create_recurrent_module()

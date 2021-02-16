@@ -33,11 +33,11 @@ def main():
     parser.add_argument('--model', type=str)
     args = parser.parse_args()
     model_filename = args.model
-    #model_filename = "model" # TODO TEMP
+    model_filename = "model" # TODO TEMP
 
     episodes = 16384
-    episode_length = 1024
-    n_training_epochs = 64
+    episode_length = 256
+    n_training_epochs = 16
     game = init_game(episode_length)
 
     # Sets time that will pause the engine after each action (in seconds)

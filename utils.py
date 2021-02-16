@@ -56,7 +56,7 @@ def get_random_action(turn_delta_sigma=3.3, weapon_switch_prob=0.05):
         random_action[random.randint(7,13)] = True
 
 
-    #random_action = [False, False, False, False, False, False, False, False, False, False, False, False, False, False]
+    # random_action = [False, False, False, False, False, False, False, False, False, False, False, False, False, False]
     #random_action = [False, False, False] + random.choices([True, False], k=4) + [False, False, False, False, False, False, False]
 
 
@@ -68,6 +68,7 @@ def get_random_action(turn_delta_sigma=3.3, weapon_switch_prob=0.05):
 
     random_action.append(random.gauss(0, turn_delta_sigma))
     random_action[14] = np.clip(random_action[14], -10.0, 10.0)
+    #random_action.append(0.0)
     return random_action
 
 """
