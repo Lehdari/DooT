@@ -118,10 +118,11 @@ class TrainerInterface:
 
 	def set_episode_length(self, episode_length):
 		self.episode_length = episode_length
-		self.replay_images = tf.Variable(tf.zeros((episode_length, 240, 320, 3)))
-		self.replay_actions = tf.Variable(tf.zeros((episode_length, 15)))
-		self.replay_rewards_step = tf.Variable(tf.zeros((episode_length,)))
-		self.replay_rewards_avg = tf.Variable(tf.zeros((episode_length,)))
+		self.n_episodes = 8
+		self.replay_images = np.zeros((episode_length, self.n_episodes, 240, 320, 3), dtype=np.float32)
+		self.replay_actions = np.zeros((episode_length, self.n_episodes, 15), dtype=np.float32)
+		self.replay_rewards_step = np.zeros((episode_length, self.n_episodes,), dtype=np.float32)
+		self.replay_rewards_avg = np.zeros((episode_length, self.n_episodes,), dtype=np.float32)
 	
 	"""
 	Reset after an episode
@@ -131,7 +132,7 @@ class TrainerInterface:
 		self.model.reset_state()
 		self.action_prev = get_null_action()
 
-		self.memory = MemorySequence()
+		#self.memory = MemorySequence()
 		self.reward_cum = 0.0 # cumulative reward
 		self.reward_n = 0
 	
@@ -144,6 +145,7 @@ class TrainerInterface:
 		#self.replay_actions = []
 		#self.replay_rewards = []
 		self.n_entries = 0
+		self.active_replay_sequence = 0
 	
 	def save_replay_entry(self, entry):
 		self.replay_images.append(entry.image)
@@ -180,7 +182,8 @@ class TrainerInterface:
 		# time.sleep(2.0)
 
 		# advance the model state using the screen buffer
-		reward_model = self.model.advance(screen_buf, action)
+		#reward_model = self.model.advance(screen_buf, action)
+		reward_model = 0.0
 
 		# Only pick up the death penalty from the builtin reward system
 		reward_game = game.make_action(action)
@@ -202,18 +205,25 @@ class TrainerInterface:
 		# Save the step into the memory
 		#self.memory.add_entry(screen_buf, action, reward)
 
-		self.replay_images[frame_id].assign(screen_buf)
-		self.replay_actions[frame_id].assign(convert_action_to_continuous(action))
-		self.replay_rewards_step[frame_id].assign(reward)
+		self.replay_images[self.n_entries, self.active_replay_sequence] =\
+			screen_buf.astype(np.float32) * 0.0039215686274509803 # 1/255
+		self.replay_actions[self.n_entries, self.active_replay_sequence] =\
+			convert_action_to_continuous(action)
+		self.replay_rewards_step[self.n_entries, self.active_replay_sequence] = reward
 		self.n_entries += 1
 
 		done = game.is_episode_finished()
 		if done:
+			# overwrite last if episode length was not reached
+			if self.n_entries == self.episode_length:
+				self.active_replay_sequence += 1
+			self.n_entries = 0
+
 			# save the cumulative reward to the sequence
-			self.memory.reward_cum = self.reward_cum
+			#self.memory.reward_cum = self.reward_cum
 
 			# calculate discounted rewards for the memory sequence
-			self.memory.discount()
+			#self.memory.discount()
 			
 			# entries with highest discounted value
 			#top_entries = self.pick_top_replay_entries()
@@ -226,15 +236,16 @@ class TrainerInterface:
 			#	self.save_replay_entry(e)
 
 			# Sufficient number of entries gathered, time to train
-			if self.n_entries == self.episode_length:
+			if self.active_replay_sequence == self.n_episodes:
 				# average reward
-				self.replay_rewards_avg = tf.ones((self.episode_length,)) *\
+				self.replay_rewards_avg = np.ones_like(self.reward) *\
 					(self.reward_cum / self.episode_length)
 				# train
-				self.model.train(self.replay_images, self.replay_actions, self.replay_rewards_step,
-					self.replay_rewards_avg)
+				# self.model.train(self.replay_images, self.replay_actions, self.replay_rewards_step,
+				# 	self.replay_rewards_avg)
+				self.model.train_image_autoencoder(self.replay_images)
+				self.replay_reset()
 			
 			# reset stuff for the new episode
-			self.replay_reset()
 			self.episode_reset()
 			self.reward.reset_exploration()

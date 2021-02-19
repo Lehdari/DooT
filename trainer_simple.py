@@ -7,11 +7,11 @@ import math
 class TrainerSimple(TrainerInterface):
     def episode_reset(self):
         TrainerInterface.episode_reset(self)
-        self.memory.discount_factor = min(1.0-math.exp(-self.episode_id/256.0), 0.995)
+        #self.memory.discount_factor = min(1.0-math.exp(-self.episode_id/256.0), 0.995)
         #print("memory.discount_factor: {}".format(self.memory.discount_factor))
 
         self.epsilon = math.exp(-self.episode_id/128.0)
-        print("epsilon: {}".format(self.epsilon))
+        #print("epsilon: {}".format(self.epsilon))
 
     def pick_action(self, game):
         return get_random_action(turn_delta_sigma=5.0, weapon_switch_prob=0.1)

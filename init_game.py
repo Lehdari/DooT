@@ -42,7 +42,7 @@ def init_game(episode_length):
     game.set_sectors_info_enabled(False)
 
     # Sets other rendering options (all of these options except crosshair are enabled (set to True) by default)
-    game.set_render_hud(True)
+    game.set_render_hud(False)
     game.set_render_minimal_hud(False)  # If hud is enabled
     game.set_render_crosshair(False)
     game.set_render_weapon(True)
@@ -98,7 +98,7 @@ def init_game(episode_length):
     game.set_episode_start_time(14)
 
     # Makes the window appear (turned on by default)
-    game.set_window_visible(False)
+    game.set_window_visible(True)
     
     # Sets ViZDoom mode (PLAYER, ASYNC_PLAYER, SPECTATOR, ASYNC_SPECTATOR, PLAYER mode is default)
     game.set_mode(vzd.Mode.PLAYER)

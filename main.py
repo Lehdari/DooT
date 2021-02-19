@@ -36,7 +36,7 @@ def main():
     model_filename = "model" # TODO TEMP
 
     episodes = 16384
-    episode_length = 256
+    episode_length = 512
     n_training_epochs = 16
     game = init_game(episode_length)
 
@@ -59,8 +59,11 @@ def main():
     print("Model setup complete. Starting training episodes")
 
     for i in range(0, episodes):
-        #game.set_doom_map(choice(["map01", "map02", "map03", "map04", "map05"]))
-        game.set_doom_map(choice(["map01"]))
+        game.set_doom_map(choice([
+            "map01", "map02", "map03", "map04", "map05",
+            "map06", "map07", "map08", "map09", "map10",
+            "map11", "map12", "map13", "map14", "map15",
+            "map16", "map17", "map18", "map19", "map20"]))
 
         game.new_episode()
         reward_controller.player_start_pos = utils.get_player_pos(game)
