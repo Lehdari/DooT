@@ -45,7 +45,7 @@ class Reward():
         vx = game.get_game_variable(vzd.VELOCITY_X)
         vy = game.get_game_variable(vzd.VELOCITY_Y)
         # some low pass filter to smooth out jitter
-        self.velocity = 0.1 * self.velocity + 0.9 * np.sqrt(vx*vx + vy*vy)
+        self.velocity = 0.9 * self.velocity + 0.1 * np.sqrt(vx*vx + vy*vy)
         return self.velocity/8.33 - 1.0 # error -1 when standing still, 0 for walking, 1 for running
     
     def get_item_reward(self, game):
@@ -110,7 +110,7 @@ class Reward():
         self.weapon5_prev = weapon5
         self.weapon6_prev = weapon6
 
-        return ammo_reward * 0.5 + weapon_reward * 100.0
+        return ammo_reward * 0.5 + weapon_reward * 1000.0
 
     def get_combat_reward(self, game):
         health = game.get_game_variable(vzd.HEALTH)
@@ -139,7 +139,7 @@ class Reward():
         self.health_prev = health
         self.armor_prev = armor
 
-        return 5.0*damage_reward + health_reward + armor_reward
+        return 10.0*damage_reward + health_reward + armor_reward
 
     def get_exploration_reward(self, player_pos):
         tile_x = int(player_pos[0] / self.exploration_tile_size)
@@ -180,20 +180,22 @@ class Reward():
     def get_action_reward(self, action):
         reward_action = 0.0
 
-        # by default, penalize from weapon change actions
-        for i in range(7, 14):
-            if action[i]:
-                reward_action -= 1.0
+        # # by default, penalize from weapon change actions
+        # for i in range(7, 14):
+        #     if action[i]:
+        #         reward_action -= 1.0
 
-        # also penalize for pressing forward+back or right+left simultaneously
-        if action[3] and action[4]:
-            reward_action -= 1.0
-        if action[5] and action[6]:
-            reward_action -= 1.0
+        # # also penalize for pressing forward+back or right+left simultaneously
+        # if action[3] and action[4]:
+        #     reward_action -= 1.0
+        # if action[5] and action[6]:
+        #     reward_action -= 1.0
         
-        # encourage attacking
-        if action[0]:
-            reward_action += 1.0
+        # # encourage attacking
+        # if action[0]:
+        #     reward_action += 1.0
+
+        reward_action -= (action[14]*0.1)**2.0
 
         return reward_action
 
@@ -207,9 +209,9 @@ class Reward():
 
         velocity_reward = self.get_velocity_reward(game)
 
-        start_dist_reward = 0.0#self.get_start_distance_reward(player_pos)
+        #start_dist_reward = 0.0#self.get_start_distance_reward(player_pos)
 
-        exploration_reward = 0.0#self.get_exploration_reward(player_pos)
+        #exploration_reward = 0.0#self.get_exploration_reward(player_pos)
 
         item_reward = self.get_item_reward(game)
 
@@ -223,11 +225,9 @@ class Reward():
         return\
             living_reward +\
             1.0*velocity_reward +\
-            1.0*start_dist_reward +\
-            2.0*exploration_reward +\
             0.5*item_reward +\
             2.0*combat_reward +\
-            0.0*action_reward +\
+            1.0*action_reward +\
             1.0*misc_reward
     
     def get_distance(self, game):

@@ -7,61 +7,44 @@ import math
 class TrainerSimple(TrainerInterface):
     def episode_reset(self):
         TrainerInterface.episode_reset(self)
-        #self.memory.discount_factor = min(1.0-math.exp(-self.episode_id/256.0), 0.995)
-        #print("memory.discount_factor: {}".format(self.memory.discount_factor))
 
-        self.epsilon = math.exp(-self.episode_id/128.0)
-        #print("epsilon: {}".format(self.epsilon))
+        self.epsilon = math.exp(-(self.episode_id)/128.0)
+        if self.epsilon < 0.05:
+            self.epsilon = 0.05
+        self.epsilon *= 1.0 - (self.memory.active_episode / self.n_replay_episodes)
 
     def pick_action(self, game):
-        return get_random_action(turn_delta_sigma=5.0, weapon_switch_prob=0.1)
-
-        # action = get_null_action()
-        # if self.episode_id % 2 == 1:
-        #     action = self.model.predict_worst_action()
+        # r = random.random()
+        # if r < self.epsilon:
+        #     if random.random() < 0.1:
+        #         action = get_random_action(turn_delta_sigma=5.0,
+        #             weapon_switch_prob=0.3-0.26*self.epsilon)
+        #         action[14] = 0.5*self.action_prev[14] + 0.5*action[14]
+        #     else:
+        #         action = mutate_action(self.action_prev, 2, turn_delta_sigma=3.0, turn_damping=0.95,
+        #             weapon_switch_prob=0.3-0.26*self.epsilon)
         # else:
         #     action = self.model.predict_action()
 
-        # if random.random() < self.epsilon:
-        #     action = get_random_action(turn_delta_sigma=5.0,
-        #         weapon_switch_prob=0.5-0.4*self.epsilon)
-        #     #action = mutate_action(action, 2, weapon_switch_prob=0.5-0.4*epsilon)
+        #     if r < self.epsilon*2.0:
+        #         action = mutate_action(action, 2, turn_delta_sigma=2.0, turn_damping=0.9,
+        #             weapon_switch_prob=0.2-0.17*self.epsilon)
+        #     elif r < self.epsilon*4.0:
+        #         action = mutate_action(action, 1, turn_delta_sigma=1.5, turn_damping=0.85,
+        #             weapon_switch_prob=0.1-0.08*self.epsilon)
         
-        # return action
+        action = self.model.predict_action(epsilon=self.epsilon)
 
+        # Add some random walk to epsilon
+        self.epsilon += np.random.normal(scale=1.0/256)
+        self.epsilon = np.clip(self.epsilon, 0.0, 1.0)
 
-        
-        # if self.episode_id < 128:
-        #     return get_random_action(turn_delta_sigma=5.0)
-        # if self.episode_id < 2048:
-        #     if random.random() < 0.25:
-        #         if random.random() < 0.4:
-        #             return mutate_action(self.model.predict_action(), 2, weapon_switch_prob=0.06)
-        #         else:
-        #             return self.model.predict_action()
-        #     else:
-        #         return mutate_action(self.action_prev, 4, weapon_switch_prob=0.1)
-        # elif self.episode_id < 4096:
-        #     if random.random() < 0.35:
-        #         if random.random() < 0.5:
-        #             return mutate_action(self.model.predict_action(), 1, weapon_switch_prob=0.05)
-        #         else:
-        #             return self.model.predict_action()
-        #     else:
-        #         return mutate_action(self.action_prev, 3, weapon_switch_prob=0.1)
-        # else:
-        #     if random.random() < 0.45:
-        #         if random.random() < 0.6:
-        #             return mutate_action(self.model.predict_action(), 1, weapon_switch_prob=0.05)
-        #         else:
-        #             return self.model.predict_action()
-        #     else:
-        #         return mutate_action(self.action_prev, 3, weapon_switch_prob=0.1)
+        return action
 
     def pick_top_replay_entries(self):
         #return self.memory.get_best_clutch(256) + list(self.memory.get_best_entries(128))
         return self.memory.sequence
 
     def mix_reward(self, reward_model, reward_game, reward_system):
-        return reward_model*20.0 + reward_game + reward_system
+        return 2.0*reward_model + reward_game + reward_system
         #return reward_action

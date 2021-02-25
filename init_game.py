@@ -18,7 +18,7 @@ def init_game(episode_length):
     game.set_doom_map("map01")
 
     # Easy difficulty
-    game.set_doom_skill(1)
+    game.set_doom_skill(4)
 
     # Sets resolution. Default is 320X240
     game.set_screen_resolution(vzd.ScreenResolution.RES_320X240)
@@ -42,7 +42,7 @@ def init_game(episode_length):
     game.set_sectors_info_enabled(False)
 
     # Sets other rendering options (all of these options except crosshair are enabled (set to True) by default)
-    game.set_render_hud(False)
+    game.set_render_hud(True)
     game.set_render_minimal_hud(False)  # If hud is enabled
     game.set_render_crosshair(False)
     game.set_render_weapon(True)

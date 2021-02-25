@@ -82,12 +82,14 @@ def get_null_action():
 """
 Apply a mutation to an action
 """
-def mutate_action(action, max_flipped_buttons=4, turn_delta_sigma=1.0, weapon_switch_prob=0.03):
+def mutate_action(action, max_flipped_buttons=4, turn_delta_sigma=1.0, turn_damping=0.9,
+    weapon_switch_prob=0.03,):
     # flip buttons
-    flipped_buttons = random.randint(1,max_flipped_buttons)
-    for i in range(flipped_buttons):
-        button_id = random.randint(0,13) # id of button to flip
-        action[button_id] = not action[button_id]
+    if max_flipped_buttons > 0:
+        flipped_buttons = random.randint(1,max_flipped_buttons)
+        for i in range(flipped_buttons):
+            button_id = random.randint(0,13) # id of button to flip
+            action[button_id] = not action[button_id]
     
     # reset weapon switching
     for i in range(7,14):
@@ -97,6 +99,7 @@ def mutate_action(action, max_flipped_buttons=4, turn_delta_sigma=1.0, weapon_sw
         action[random.randint(7,13)] = True
     
     # apply deviation to the turning delta
+    action[14] *= turn_damping
     action[14] += random.gauss(0.0, turn_delta_sigma)
     action[14] = np.clip(action[14], -10.0, 10.0)
 
