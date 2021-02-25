@@ -38,8 +38,8 @@ def main():
     episodes = 16384
     episode_length = 4096
     n_replay_episodes = 8
-    replay_sample_length = 512
-    n_training_epochs = 8
+    replay_sample_length = 64
+    n_training_epochs = 64
     game = init_game(episode_length)
 
     # Sets time that will pause the engine after each action (in seconds)

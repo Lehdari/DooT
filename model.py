@@ -40,10 +40,14 @@ class Model:
 		self.optimizer = keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
 		self.loss_function = keras.losses.MeanSquaredError()
 		self.loss_image = loss_image
-		self.loss_action = loss_action
+		#self.loss_action = loss_action
 
 		self.state_size = 256
 		self.image_enc_size = 256
+		self.tbptt_length = 8
+		self.tbptt_stride = 4
+		self.enc_tbptt_length = 32
+		self.enc_tbptt_stride = 8
 
 		self.reset_state()
 		self.action_predict_step_size = tf.Variable(0.01)
@@ -58,6 +62,172 @@ class Model:
 		self.create_action_model()
 		self.create_reward_model()
 		self.create_encoding_model()
+
+		self.define_training_functions()
+
+
+	def define_training_functions(self):
+		@tf.function(input_signature=[
+			tf.TensorSpec(shape=(self.replay_sample_length, 8, 240, 320, 3), dtype=tf.float32),
+			tf.TensorSpec(shape=(self.replay_sample_length, 8, 15), dtype=tf.float32),
+			tf.TensorSpec(shape=(self.replay_sample_length, 8), dtype=tf.float32),
+			tf.TensorSpec(shape=(8, self.state_size), dtype=tf.float32),
+		])
+		def train_image_encoder_model(images, actions, rewards, state_init):
+			state_prev = state_init
+			# loss_sum = 0.0
+			i = 0
+			while i <= self.replay_sample_length-self.tbptt_length:
+				with tf.GradientTape(persistent=True) as gt:
+					image_enc = self.model_image_encoder(images[i], training=True)
+					state= self.model_state([state_prev, image_enc], training=True)
+					reward = self.model_reward([state, actions[i]], training=True)
+
+					loss = self.loss_function(rewards[i], reward)
+					loss = self.model_image_encoder.losses[0] + self.model_state.losses[0]
+
+					for j in range(1, self.tbptt_length):
+						image_enc = self.model_image_encoder(images[i+j], training=True)
+						state= self.model_state([state, image_enc], training=True)
+						reward = self.model_reward([state, actions[i+j]], training=True)
+
+						# reward loss
+						loss += self.loss_function(rewards[i+j], reward)
+						# regularization loss
+						loss += self.model_image_encoder.losses[0] + self.model_state.losses[0]
+
+					# loss_sum += loss.numpy()
+				
+				g_model_image_encoder = gt.gradient(loss, self.model_image_encoder.trainable_variables)
+				g_model_reward = gt.gradient(loss, self.model_reward.trainable_variables)
+			
+				self.optimizer.apply_gradients(zip(g_model_image_encoder,
+					self.model_image_encoder.trainable_variables))
+				self.optimizer.apply_gradients(zip(g_model_reward,
+					self.model_reward.trainable_variables))
+
+				# loss_denom = (i+1)*self.tbptt_length
+				# if i < self.replay_sample_length-self.tbptt_length:
+				# 	print("A {:2d} {:4d}/{:4d} loss_reward: {:4.15f}".format(
+				# 		e, i, self.replay_sample_length, loss_sum/loss_denom), end="\r")
+				# else:
+				# 	print("A {:2d} {:4d}/{:4d} loss_reward: {:4.15f}".format(
+				# 		e, i, self.replay_sample_length, loss_sum/loss_denom))
+				
+				for j in range(self.tbptt_stride):
+					state_prev= self.model_state([state_prev,
+						self.model_image_encoder(images[i], training=False)], training=False)
+					i += 1
+
+		@tf.function(input_signature=[
+			tf.TensorSpec(shape=(self.replay_sample_length, 8, self.image_enc_size), dtype=tf.float32),
+			tf.TensorSpec(shape=(self.replay_sample_length, 8, 15), dtype=tf.float32),
+			tf.TensorSpec(shape=(self.replay_sample_length, 8), dtype=tf.float32),
+			tf.TensorSpec(shape=(8, self.state_size), dtype=tf.float32),
+		])
+		def train_backbone(image_encs, actions, rewards, state_init):
+			state_prev = state_init
+			# loss_sum = 0.0
+			# enc_loss_sum = 0.0
+			i = 0
+			while i <= self.replay_sample_length-self.enc_tbptt_length:
+				with tf.GradientTape(persistent=True) as gt:
+					state = self.model_state([state_prev, image_encs[i]], training=True)
+					reward = self.model_reward([state, actions[i]], training=True)
+
+					loss = self.loss_function(rewards[i], reward)
+					loss += self.model_image_encoder.losses[0] + self.model_state.losses[0]
+					# enc_loss = tf.zeros_like(loss)
+
+					for j in range(1, self.enc_tbptt_length):
+						image_enc_pred = self.model_encoding([state, actions[i+j-1]], training=True)
+						state = self.model_state([state, image_enc_pred], training=True)
+						reward = self.model_reward([state, actions[i+j]], training=True)
+
+						loss += self.loss_function(rewards[i+j], reward)
+						loss += self.model_image_encoder.losses[0] + self.model_state.losses[0]
+						# image encoding loss
+						# enc_loss += self.loss_function(image_encs[i+j], image_enc_pred)
+					
+					# loss += enc_loss
+					# loss_sum += loss.numpy()
+					# enc_loss_sum += enc_loss.numpy()
+				
+				g_model_encoding = gt.gradient(loss, self.model_encoding.trainable_variables)
+				g_model_state = gt.gradient(loss, self.model_state.trainable_variables)
+				g_model_reward = gt.gradient(loss, self.model_reward.trainable_variables)
+			
+				self.optimizer.apply_gradients(zip(g_model_encoding,
+					self.model_encoding.trainable_variables))
+				self.optimizer.apply_gradients(zip(g_model_state,
+					self.model_state.trainable_variables))
+				self.optimizer.apply_gradients(zip(g_model_reward,
+					self.model_reward.trainable_variables))
+
+				# loss_denom = (i+1)*enc_tbptt_length
+				# if i < self.replay_sample_length-enc_tbptt_length:
+				# 	print("B {:2d} {:4d}/{:4d} loss_reward: {:4.15f} loss_enc: {:4.15f}".format(
+				# 		e, i, self.replay_sample_length, loss_sum/loss_denom,
+				# 		enc_loss_sum/loss_denom), end="\r")
+				# else:
+				# 	print("B {:2d} {:4d}/{:4d} loss_reward: {:4.15f} loss_enc: {:4.15f}".format(
+				# 		e, i, self.replay_sample_length, loss_sum/loss_denom,
+				# 		enc_loss_sum/loss_denom))
+				
+				for j in range(self.enc_tbptt_stride):
+					state_prev = self.model_state([state_prev, image_encs[i]], training=False)
+					i += 1
+
+		@tf.function(input_signature=[
+			tf.TensorSpec(shape=(self.replay_sample_length, 8, self.image_enc_size), dtype=tf.float32),
+			tf.TensorSpec(shape=(self.replay_sample_length, 8, 15), dtype=tf.float32),
+			tf.TensorSpec(shape=(self.replay_sample_length, 8), dtype=tf.float32),
+			tf.TensorSpec(shape=(8, self.state_size), dtype=tf.float32),
+		])
+		def train_action_model(image_encs, actions, rewards, state_init):
+			# action model training
+			state = state_init
+			# loss_sum = 0.0
+			for i in range(self.replay_sample_length):
+				loss = tf.zeros((1))
+				state = self.model_state([state, image_encs[i]], training=False)
+
+				with tf.GradientTape(persistent=True) as gt:
+					action = self.model_action(state, training=True)
+					reward_pred = self.model_reward([state, action], training=True)
+					loss = -tf.reduce_mean(reward_pred)
+				
+				# loss_sum += loss.numpy()
+
+				g_model_action = gt.gradient(loss, self.model_action.trainable_variables)
+				
+				self.optimizer.apply_gradients(zip(g_model_action,
+					self.model_action.trainable_variables))
+				
+				# if i < self.replay_sample_length-1:
+				# 	print("C {:2d} {:4d}/{:4d} loss_action: {:4.15f}".format(
+				# 		e, i, self.replay_sample_length, loss_sum/(i+1)), end="\r")
+				# else:
+				# 	print("C {:2d} {:4d}/{:4d} loss_action: {:4.15f}".format(
+				# 		e, i, self.replay_sample_length, loss_sum/(i+1)))
+		
+		self.train_image_encoder_model = train_image_encoder_model
+		self.train_backbone = train_backbone
+		self.train_action_model = train_action_model
+
+		# # call with test tensors to force tracing
+		# test_images = tf.zeros((self.replay_sample_length, 8, 240, 320, 3), dtype=tf.float32)
+		# test_image_encs = tf.zeros((self.replay_sample_length, 8, self.image_enc_size), dtype=tf.float32)
+		# test_actions = tf.zeros((self.replay_sample_length, 8, 15), dtype=tf.float32)
+		# test_rewards = tf.zeros((self.replay_sample_length, 8), dtype=tf.float32)
+		# test_state_init = tf.zeros((8, self.state_size), dtype=tf.float32)
+
+		# print("Testing image encoder model training...")
+		# self.train_image_encoder_model(test_images, test_actions, test_rewards, test_state_init)
+		# print("Testing backbone training...")
+		# self.train_backbone(test_image_encs, test_actions, test_rewards, test_state_init)
+		# print("Testing action model training...")
+		# self.train_action_model(test_image_encs, test_actions, test_rewards, test_state_init)
 
 	
 	def module_dense(self, x, n, x2=None, n2=None, alpha=0.001, act=None):
@@ -322,8 +492,9 @@ class Model:
 	return: list length of 15: 14 booleans and 1 float
 	"""
 	def predict_action(self, epsilon=0.0):
-		action = self.model_action((1.0-epsilon)*self.state +\
-			epsilon*tf.random.uniform((1, self.state_size)), training=False)[0]
+		state_input = (1.0-epsilon)*self.state +\
+			epsilon*tf.random.uniform((1, self.state_size), -1.0, 1.0)
+		action = self.model_action(state_input, training=False)[0]
 
 		return convert_action_to_mixed(action)
 
@@ -343,148 +514,36 @@ class Model:
 
 		return convert_action_to_mixed(action[0])
 
-	#@tf.function
+
 	def train(self, memory):
 		n_sequences = memory.images.shape[1]
-
-		tbptt_length = 8
-		tbptt_stride = 4
-		enc_tbptt_length = 32
-		enc_tbptt_stride = 8
 
 		image_encs = tf.Variable(tf.zeros((self.replay_sample_length, n_sequences,
 			self.image_enc_size)))
 
 		for e in range(self.n_training_epochs):
 			# compute initial states
-			memory.compute_states(self.model_state, self.model_image_encoder)
+			if e%8 == 0:
+				memory.compute_states(self.model_state, self.model_image_encoder)
+			
 			images, actions, rewards, state_init = memory.get_sample(self.replay_sample_length)
 
-			state_prev = state_init
-			loss_sum = 0.0
-			i = 0
-			while i <= self.replay_sample_length-tbptt_length:
-				with tf.GradientTape(persistent=True) as gt:
-					image_enc = self.model_image_encoder(images[i], training=True)
-					state= self.model_state([state_prev, image_enc], training=True)
-					reward = self.model_reward([state, actions[i]], training=True)
-
-					loss = self.loss_function(rewards[i], reward)
-					loss = self.model_image_encoder.losses[0] + self.model_state.losses[0]
-
-					for j in range(1, tbptt_length):
-						image_enc = self.model_image_encoder(images[i+j], training=True)
-						state= self.model_state([state, image_enc], training=True)
-						reward = self.model_reward([state, actions[i+j]], training=True)
-
-						# reward loss
-						loss += self.loss_function(rewards[i+j], reward)
-						# regularization loss
-						loss += self.model_image_encoder.losses[0] + self.model_state.losses[0]
-
-					loss_sum += loss.numpy()
-				
-				g_model_image_encoder = gt.gradient(loss, self.model_image_encoder.trainable_variables)
-				g_model_reward = gt.gradient(loss, self.model_reward.trainable_variables)
-			
-				self.optimizer.apply_gradients(zip(g_model_image_encoder,
-					self.model_image_encoder.trainable_variables))
-				self.optimizer.apply_gradients(zip(g_model_reward,
-					self.model_reward.trainable_variables))
-
-				loss_denom = (i+1)*tbptt_length
-				if i < self.replay_sample_length-tbptt_length:
-					print("A {:2d} {:4d}/{:4d} loss_reward: {:4.15f}".format(
-						e, i, self.replay_sample_length, loss_sum/loss_denom), end="\r")
-				else:
-					print("A {:2d} {:4d}/{:4d} loss_reward: {:4.15f}".format(
-						e, i, self.replay_sample_length, loss_sum/loss_denom))
-				
-				for j in range(tbptt_stride):
-					state_prev= self.model_state([state_prev,
-						self.model_image_encoder(images[i], training=False)], training=False)
-					i += 1
+			print("Epoch {:3d} - Training image encoder model... ".format(e), end="")
+			self.train_image_encoder_model(images, actions, rewards, state_init)
+			print("Done          ")
 
 			for i in range(self.replay_sample_length):
 				image_encs[i].assign(self.model_image_encoder(images[i], training=False))
 				print("Computing image encodings... {} / {}      ".format(i,
 				self.replay_sample_length), end="\r")
 
-			state_prev = state_init
-			loss_sum = 0.0
-			enc_loss_sum = 0.0
-			i = 0
-			while i <= self.replay_sample_length-enc_tbptt_length:
-				with tf.GradientTape(persistent=True) as gt:
-					state = self.model_state([state_prev, image_encs[i]], training=True)
-					reward = self.model_reward([state, actions[i]], training=True)
-
-					loss = self.loss_function(rewards[i], reward)
-					loss += self.model_image_encoder.losses[0] + self.model_state.losses[0]
-					enc_loss = tf.zeros_like(loss)
-
-					for j in range(1, enc_tbptt_length):
-						image_enc_pred = self.model_encoding([state, actions[i+j-1]], training=True)
-						state = self.model_state([state, image_enc_pred], training=True)
-						reward = self.model_reward([state, actions[i+j]], training=True)
-
-						loss += self.loss_function(rewards[i+j], reward)
-						loss += self.model_image_encoder.losses[0] + self.model_state.losses[0]
-						# image encoding loss
-						enc_loss += self.loss_function(image_encs[i+j], image_enc_pred)
-					
-					loss += enc_loss
-					loss_sum += loss.numpy()
-					enc_loss_sum += enc_loss.numpy()
-				
-				g_model_encoding = gt.gradient(loss, self.model_encoding.trainable_variables)
-				g_model_state = gt.gradient(loss, self.model_state.trainable_variables)
-				g_model_reward = gt.gradient(loss, self.model_reward.trainable_variables)
+			print("Epoch {:3d} - Training backbone... ".format(e), end="")
+			self.train_backbone(image_encs, actions, rewards, state_init)
+			print("Done          ")
 			
-				self.optimizer.apply_gradients(zip(g_model_encoding,
-					self.model_encoding.trainable_variables))
-				self.optimizer.apply_gradients(zip(g_model_state,
-					self.model_state.trainable_variables))
-				self.optimizer.apply_gradients(zip(g_model_reward,
-					self.model_reward.trainable_variables))
-
-				loss_denom = (i+1)*enc_tbptt_length
-				if i < self.replay_sample_length-enc_tbptt_length:
-					print("B {:2d} {:4d}/{:4d} loss_reward: {:4.15f} loss_enc: {:4.15f}".format(
-						e, i, self.replay_sample_length, loss_sum/loss_denom,
-						enc_loss_sum/loss_denom), end="\r")
-				else:
-					print("B {:2d} {:4d}/{:4d} loss_reward: {:4.15f} loss_enc: {:4.15f}".format(
-						e, i, self.replay_sample_length, loss_sum/loss_denom,
-						enc_loss_sum/loss_denom))
-				
-				for j in range(enc_tbptt_stride):
-					state_prev = self.model_state([state_prev, image_encs[i]], training=False)
-					i += 1
-			
-			# action model training
-			state = state_init
-			loss_sum = 0.0
-			for i in range(self.replay_sample_length):
-				loss = tf.zeros((1))
-				with tf.GradientTape(persistent=True) as gt:
-					state = self.model_state([state, image_encs[i]], training=False)
-					action = self.model_action(state, training=True)
-					loss = self.loss_action(actions[i], action, rewards[i])
-				
-				loss_sum += loss.numpy()
-
-				g_model_action = gt.gradient(loss, self.model_action.trainable_variables)
-				
-				self.optimizer.apply_gradients(zip(g_model_action,
-					self.model_action.trainable_variables))
-				
-				if i < self.replay_sample_length-1:
-					print("C {:2d} {:4d}/{:4d} loss_action: {:4.15f}".format(
-						e, i, self.replay_sample_length, loss_sum/(i+1)), end="\r")
-				else:
-					print("C {:2d} {:4d}/{:4d} loss_action: {:4.15f}".format(
-						e, i, self.replay_sample_length, loss_sum/(i+1)))
+			print("Epoch {:3d} - Training action model... ".format(e), end="")
+			self.train_action_model(image_encs, actions, rewards, state_init)
+			print("Done          ")
 			
 			del images, actions, rewards, state_init
 			gc.collect()
