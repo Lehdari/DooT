@@ -110,9 +110,6 @@ class TrainerInterface:
 			if self.memory.finish_episode():
 				self.model.train(self.memory)
 
-				# save after training
-				self.model.save_model("model")
-
 				self.replay_reset()
 			
 			# reset stuff for the new episode

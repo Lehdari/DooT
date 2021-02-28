@@ -45,8 +45,9 @@ class Model:
 
 		self.state_size = 256
 		self.image_enc_size = 256
-		self.tbptt_length = 8
-		self.enc_tbptt_length = 32
+		self.tbptt_length_encoder = 8
+		self.tbptt_length_backbone = 64
+		self.tbptt_length_action = 16
 
 		self.reset_state()
 		self.action_predict_step_size = tf.Variable(0.01)
@@ -84,7 +85,7 @@ class Model:
 				loss = self.loss_function(rewards[i], reward)
 				loss = self.model_image_encoder.losses[0] + self.model_state.losses[0]
 
-				for j in range(1, self.tbptt_length):
+				for j in range(1, self.tbptt_length_encoder):
 					image_enc = self.model_image_encoder(images[i+j], training=True)
 					state= self.model_state([state, image_enc], training=True)
 					reward = self.model_reward([state, actions[i+j]], training=True)
@@ -124,7 +125,7 @@ class Model:
 				loss += self.model_image_encoder.losses[0] + self.model_state.losses[0]
 				enc_loss = tf.zeros_like(loss)
 
-				for j in range(1, self.enc_tbptt_length):
+				for j in range(1, self.tbptt_length_backbone):
 					image_enc_pred = self.model_encoding([state, actions[i+j-1]], training=True)
 					state = self.model_state([state, image_enc_pred], training=True)
 					reward = self.model_reward([state, actions[i+j]], training=True)
@@ -166,6 +167,15 @@ class Model:
 				action = self.models_action[self.active_action_model](state, training=True)
 				reward_pred = self.model_reward([state, action], training=True)
 				loss = -tf.reduce_mean(reward_pred)
+
+				# simulate forward and predict rewards
+				for j in range(1, self.tbptt_length_action):
+					image_enc_pred = self.model_encoding([state, action], training=False)
+					state = self.model_state([state, image_enc_pred], training=False)
+					action = self.models_action[self.active_action_model](state, training=True)
+					reward_pred = self.model_reward([state, action], training=True)
+
+					loss -= tf.reduce_mean(reward_pred)
 			
 			g_model_action = gt.gradient(loss, self.models_action[self.active_action_model].trainable_variables)
 			
@@ -481,11 +491,11 @@ class Model:
 
 			# train the image encodet model (and reward model, 1st phase)
 			state_prev = state_init
-			for i in range(self.replay_sample_length-self.tbptt_length):
+			for i in range(self.replay_sample_length-self.tbptt_length_encoder):
 				state_prev = self.train_image_encoder_model(images, actions, rewards, state_prev,
 					tf.convert_to_tensor(i))
 				print("Epoch {:3d} - Training image encoder model ({}/{})".format(
-					e, i+self.tbptt_length+1, self.replay_sample_length), end="\r")
+					e, i+self.tbptt_length_encoder+1, self.replay_sample_length), end="\r")
 			print("")
 
 			for i in range(self.replay_sample_length):
@@ -495,11 +505,11 @@ class Model:
 
 			# train the backbone (image encoding, state and reward models)
 			state_prev = state_init
-			for i in range(self.replay_sample_length-self.enc_tbptt_length):
+			for i in range(self.replay_sample_length-self.tbptt_length_backbone):
 				state_prev = self.train_backbone(image_encs, actions, rewards, state_prev,
 					tf.convert_to_tensor(i))
 				print("Epoch {:3d} - Training the backbone ({}/{})".format(
-					e, i+self.enc_tbptt_length+1, self.replay_sample_length), end="\r")
+					e, i+self.tbptt_length_backbone+1, self.replay_sample_length), end="\r")
 			print("")
 			
 			# train the action (policy) models

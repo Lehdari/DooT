@@ -11,7 +11,7 @@ class TrainerSimple(TrainerInterface):
         self.epsilon = math.exp(-(self.episode_id)/32.0)
         if self.epsilon < 0.05:
             self.epsilon = 0.05
-        #self.epsilon *= 1.0 - 0.5*(self.memory.active_episode / self.n_replay_episodes)
+        
         self.epsilon = 0.0
 
     def pick_action(self, game):
