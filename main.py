@@ -33,13 +33,13 @@ def main():
     parser.add_argument('--model', type=str)
     args = parser.parse_args()
     model_filename = args.model
-    model_filename = "model" # TODO TEMP
+    model_filename = "model/model" # TODO TEMP
 
     episodes = 16384
     episode_length = 4096
     n_replay_episodes = 8
-    replay_sample_length = 64
-    n_training_epochs = 64
+    replay_sample_length = 512
+    n_training_epochs = 8
     game = init_game(episode_length)
 
     # Sets time that will pause the engine after each action (in seconds)
@@ -52,10 +52,11 @@ def main():
     print("Player start pos:", player_start_pos)
 
     reward_controller = Reward(player_start_pos)
-    model = Model(episode_length, n_training_epochs, replay_sample_length)
+    model = Model(episode_length, n_replay_episodes, n_training_epochs, replay_sample_length)
+
     if model_filename is not None:
         print("Loading model ({})".format(model_filename))
-        model.load_model("model")
+        model.load_model(model_filename)
     trainer = TrainerSimple(model, reward_controller, n_replay_episodes, episode_length,
         2*replay_sample_length)
 

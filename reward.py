@@ -1,6 +1,8 @@
 import vizdoom as vzd
 import numpy as np
+import collections
 from utils import *
+
 
 class Reward():
     def __init__(self, player_start_pos):
@@ -37,6 +39,10 @@ class Reward():
         self.damage_prev = -1.0
 
         self.velocity = 0.0
+
+        # buffer for storing recent turn deltas
+        self.turn_buffer_size = 128
+        self.turn_buffer = collections.deque(maxlen=self.turn_buffer_size)
     
     def reset_exploration(self):
         self.exploration_tiles = {}
@@ -195,7 +201,11 @@ class Reward():
         # if action[0]:
         #     reward_action += 1.0
 
-        reward_action -= (action[14]*0.1)**2.0
+        # penalize for "spinbottiness":
+        # heavy penalties for continuous rotation, (hence the turn delta buffering)
+        self.turn_buffer.append(action[14]*0.1)
+        turn_delta_buffered = sum(self.turn_buffer)/self.turn_buffer_size
+        reward_action -= 8.0*abs(turn_delta_buffered)**3.0
 
         return reward_action
 

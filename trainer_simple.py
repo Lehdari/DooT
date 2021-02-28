@@ -8,10 +8,11 @@ class TrainerSimple(TrainerInterface):
     def episode_reset(self):
         TrainerInterface.episode_reset(self)
 
-        self.epsilon = math.exp(-(self.episode_id)/64.0)
+        self.epsilon = math.exp(-(self.episode_id)/32.0)
         if self.epsilon < 0.05:
             self.epsilon = 0.05
-        self.epsilon *= 1.0 - (self.memory.active_episode / self.n_replay_episodes)
+        #self.epsilon *= 1.0 - 0.5*(self.memory.active_episode / self.n_replay_episodes)
+        self.epsilon = 0.0
 
     def pick_action(self, game):
         r = random.random()
@@ -24,7 +25,7 @@ class TrainerSimple(TrainerInterface):
                 action = mutate_action(self.action_prev, 2, turn_delta_sigma=3.0, turn_damping=0.95,
                     weapon_switch_prob=0.3-0.26*self.epsilon)
         else:
-            action = self.model.predict_action()
+            action = self.model.predict_action(self.memory.active_episode)
 
             if r < self.epsilon*2.0:
                 action = mutate_action(action, 2, turn_delta_sigma=2.0, turn_damping=0.9,
@@ -32,12 +33,10 @@ class TrainerSimple(TrainerInterface):
             elif r < self.epsilon*4.0:
                 action = mutate_action(action, 1, turn_delta_sigma=1.5, turn_damping=0.85,
                     weapon_switch_prob=0.1-0.08*self.epsilon)
-        
-        #action = self.model.predict_action(epsilon=self.epsilon)
 
         # Add some random walk to epsilon
-        self.epsilon += np.random.normal(scale=1.0/256)
-        self.epsilon = np.clip(self.epsilon, 0.0, 1.0)
+        # self.epsilon += np.random.normal(scale=1.0/256)
+        # self.epsilon = np.clip(self.epsilon, 0.01, 1.0)
 
         return action
 
@@ -46,5 +45,5 @@ class TrainerSimple(TrainerInterface):
         return self.memory.sequence
 
     def mix_reward(self, reward_model, reward_game, reward_system):
-        return 2.0*reward_model + reward_game + reward_system
+        return 5.0*reward_model + reward_game + reward_system
         #return reward_action
