@@ -34,6 +34,78 @@ def loss_action(y_true, y_pred, reward):
 	return tf.reduce_mean(tf.square(y_true-y_pred) * tf.expand_dims(-reward, axis=-1))
 
 
+class ActionModel:
+	def __init__(self, model):
+		self.model_state = model.model_state
+		self.model_encoding = model.model_encoding
+		self.model_reward = model.model_reward
+
+		self.tbptt_length_action = model.tbptt_length_action
+		self.action_optimizer = model.action_optimizer
+
+		self.create_action_model(model)
+
+		@tf.function(input_signature=[
+			tf.TensorSpec(shape=(model.replay_sample_length, 8, model.image_enc_size), dtype=tf.float32),
+			tf.TensorSpec(shape=(model.replay_sample_length, 8, 15), dtype=tf.float32),
+			tf.TensorSpec(shape=(model.replay_sample_length, 8), dtype=tf.float32),
+			tf.TensorSpec(shape=(8, model.state_size), dtype=tf.float32),
+			tf.TensorSpec(shape=(), dtype=tf.int32)
+		])
+		def train(image_encs, actions, rewards, state, i):
+			state = self.model_state([state, image_encs[i]], training=False)
+
+			with tf.GradientTape(persistent=True) as gt:
+				action = self.model_action(state, training=True)
+				reward_pred = self.model_reward([state, action], training=True)
+				loss = -tf.reduce_mean(reward_pred)
+
+				# simulate forward and predict rewards
+				for j in range(1, self.tbptt_length_action):
+					image_enc_pred = self.model_encoding([state, action], training=False)
+					state = self.model_state([state, image_enc_pred], training=False)
+					action = self.model_action(state, training=True)
+					reward_pred = self.model_reward([state, action], training=True)
+
+					loss -= tf.reduce_mean(reward_pred)
+			
+			g_model_action = gt.gradient(loss, self.model_action.trainable_variables)
+			
+			self.action_optimizer.apply_gradients(zip(g_model_action,
+				self.model_action.trainable_variables))
+			
+			return state, loss
+		
+		self.train = train
+	
+
+	def create_action_model(self, model):
+		self.model_action_i_state = keras.Input(shape=(model.state_size))
+
+		x = model.module_dense(self.model_action_i_state, model.state_size, n2=model.state_size)
+
+		self.model_action_o_action = layers.Dense(15,
+			kernel_initializer=model.initializer, use_bias=False, activation="tanh")(x)
+		
+		self.model_action = keras.Model(
+			inputs=self.model_action_i_state,
+			outputs=self.model_action_o_action,
+			name="model_action")
+		#self.model_action.summary()
+	
+
+	def save(self, filename):
+		self.model_action.save_weights(filename)
+	
+
+	def load(self, filename):
+		self.model_action.load_weights(filename)
+	
+
+	def __call__(self, input, training=True):
+		return self.model_action(input, training=training)
+
+
 class Model:
 	def __init__(self, episode_length, n_replay_episodes, n_training_epochs, replay_sample_length):
 		self.initializer = initializers.RandomNormal(stddev=0.02)
@@ -46,7 +118,7 @@ class Model:
 		self.state_size = 256
 		self.image_enc_size = 256
 		self.tbptt_length_encoder = 8
-		self.tbptt_length_backbone = 64
+		self.tbptt_length_backbone = 32
 		self.tbptt_length_action = 16
 
 		self.reset_state()
@@ -60,9 +132,9 @@ class Model:
 		self.create_image_decoder_model(feature_multiplier=2)
 
 		self.create_state_model()
-		self.create_action_model()
 		self.create_reward_model()
 		self.create_encoding_model()
+		self.create_action_models()
 
 		self.define_training_functions()
 
@@ -94,8 +166,6 @@ class Model:
 					loss += self.loss_function(rewards[i+j], reward)
 					# regularization loss
 					loss += self.model_image_encoder.losses[0] + self.model_state.losses[0]
-
-				# loss_sum += loss.numpy()
 			
 			g_model_image_encoder = gt.gradient(loss, self.model_image_encoder.trainable_variables)
 			g_model_reward = gt.gradient(loss, self.model_reward.trainable_variables)
@@ -105,8 +175,9 @@ class Model:
 			self.optimizer.apply_gradients(zip(g_model_reward,
 				self.model_reward.trainable_variables))
 			
-			return self.model_state([state_init, self.model_image_encoder(images[i],
+			state = self.model_state([state_init, self.model_image_encoder(images[i],
 				training=False)], training=False)
+			return state, loss
 
 
 		@tf.function(input_signature=[
@@ -121,27 +192,25 @@ class Model:
 				state = self.model_state([state_init, image_encs[i]], training=True)
 				reward = self.model_reward([state, actions[i]], training=True)
 
-				loss = self.loss_function(rewards[i], reward)
-				loss += self.model_image_encoder.losses[0] + self.model_state.losses[0]
-				enc_loss = tf.zeros_like(loss)
+				loss_total = self.model_image_encoder.losses[0] + self.model_state.losses[0]
+				loss_reward = self.loss_function(rewards[i], reward)
+				loss_encoding = tf.zeros_like(loss_reward)
 
 				for j in range(1, self.tbptt_length_backbone):
 					image_enc_pred = self.model_encoding([state, actions[i+j-1]], training=True)
 					state = self.model_state([state, image_enc_pred], training=True)
 					reward = self.model_reward([state, actions[i+j]], training=True)
 
-					loss += self.loss_function(rewards[i+j], reward)
-					loss += self.model_image_encoder.losses[0] + self.model_state.losses[0]
+					loss_total += self.model_image_encoder.losses[0] + self.model_state.losses[0]
+					loss_reward += self.loss_function(rewards[i+j], reward)
 					# image encoding loss
-					enc_loss += self.loss_function(image_encs[i+j], image_enc_pred)
+					loss_encoding += self.loss_function(image_encs[i+j], image_enc_pred)
 				
-				loss += enc_loss
-				# loss_sum += loss.numpy()
-				# enc_loss_sum += enc_loss.numpy()
+				loss_total += loss_reward + loss_encoding
 			
-			g_model_encoding = gt.gradient(loss, self.model_encoding.trainable_variables)
-			g_model_state = gt.gradient(loss, self.model_state.trainable_variables)
-			g_model_reward = gt.gradient(loss, self.model_reward.trainable_variables)
+			g_model_encoding = gt.gradient(loss_total, self.model_encoding.trainable_variables)
+			g_model_state = gt.gradient(loss_total, self.model_state.trainable_variables)
+			g_model_reward = gt.gradient(loss_total, self.model_reward.trainable_variables)
 		
 			self.optimizer.apply_gradients(zip(g_model_encoding,
 				self.model_encoding.trainable_variables))
@@ -150,44 +219,12 @@ class Model:
 			self.optimizer.apply_gradients(zip(g_model_reward,
 				self.model_reward.trainable_variables))
 			
-			return self.model_state([state_init, image_encs[i]], training=False)
-		
-
-		@tf.function(input_signature=[
-			tf.TensorSpec(shape=(self.replay_sample_length, 8, self.image_enc_size), dtype=tf.float32),
-			tf.TensorSpec(shape=(self.replay_sample_length, 8, 15), dtype=tf.float32),
-			tf.TensorSpec(shape=(self.replay_sample_length, 8), dtype=tf.float32),
-			tf.TensorSpec(shape=(8, self.state_size), dtype=tf.float32),
-			tf.TensorSpec(shape=(), dtype=tf.int32)
-		])
-		def train_action_model(image_encs, actions, rewards, state, i):
-			state = self.model_state([state, image_encs[i]], training=False)
-
-			with tf.GradientTape(persistent=True) as gt:
-				action = self.models_action[self.active_action_model](state, training=True)
-				reward_pred = self.model_reward([state, action], training=True)
-				loss = -tf.reduce_mean(reward_pred)
-
-				# simulate forward and predict rewards
-				for j in range(1, self.tbptt_length_action):
-					image_enc_pred = self.model_encoding([state, action], training=False)
-					state = self.model_state([state, image_enc_pred], training=False)
-					action = self.models_action[self.active_action_model](state, training=True)
-					reward_pred = self.model_reward([state, action], training=True)
-
-					loss -= tf.reduce_mean(reward_pred)
-			
-			g_model_action = gt.gradient(loss, self.models_action[self.active_action_model].trainable_variables)
-			
-			self.action_optimizer.apply_gradients(zip(g_model_action,
-				self.models_action[self.active_action_model].trainable_variables))
-			
-			return state
+			state = self.model_state([state_init, image_encs[i]], training=False)
+			return state, loss_total, loss_reward, loss_encoding
 		
 
 		self.train_image_encoder_model = train_image_encoder_model
 		self.train_backbone = train_backbone
-		self.train_action_model = train_action_model
 
 	
 	def module_dense(self, x, n, x2=None, n2=None, alpha=0.001, act=None):
@@ -358,7 +395,7 @@ class Model:
 		# state output
 		s = self.module_dense(x, self.state_size)
 		s = layers.Dense(self.image_enc_size, kernel_initializer=self.initializer,
-			use_bias=False, activation="tanh", activity_regularizer=L2Regularizer(2.0e-2))(s)
+			use_bias=False, activation="tanh", activity_regularizer=L2Regularizer(5.0e-2))(s)
 		
 		# gate output value for previous state feedthrough
 		#g1 = self.module_dense(x, self.state_size)
@@ -379,23 +416,6 @@ class Model:
 			outputs=self.model_state_o_state,
 			name="model_state")
 		#self.model_state.summary()
-	
-
-	def create_action_model(self):
-		self.models_action = []
-		for i in range(self.n_replay_episodes):
-			self.model_action_i_state = keras.Input(shape=(self.state_size))
-
-			x = self.module_dense(self.model_action_i_state, self.state_size, n2=self.state_size)
-
-			self.model_action_o_action = layers.Dense(15,
-				kernel_initializer=self.initializer, use_bias=False, activation="tanh")(x)
-			
-			self.models_action.append(keras.Model(
-				inputs=self.model_action_i_state,
-				outputs=self.model_action_o_action,
-				name="model_action_{}".format(i)))
-			#self.model_action.summary()
 
 
 	def create_reward_model(self):
@@ -421,7 +441,7 @@ class Model:
 		self.model_encoding_i_action = keras.Input(shape=(15))
 
 		x = layers.concatenate([self.model_encoding_i_state, self.model_encoding_i_action])
-		x = self.module_dense(x, self.state_size, n2=self.state_size)
+		x = self.module_dense(x, self.state_size, n2=self.state_size*2)
 
 		self.model_encoding_o_image_enc = layers.Dense(self.image_enc_size,
 			kernel_initializer=self.initializer, use_bias=False, activation="tanh")(x)
@@ -432,6 +452,11 @@ class Model:
 			name="model_encoding")
 		#self.model_encoding.summary()
 
+	def create_action_models(self):
+		self.models_action = []
+		for i in range(self.n_replay_episodes):
+			self.models_action.append(ActionModel(self))
+
 
 	def advance(self, image, action_prev):
 		image = tf.convert_to_tensor(image, dtype=tf.float32) * 0.0039215686274509803 # 1/255
@@ -441,7 +466,7 @@ class Model:
 
 		self.state = self.model_state([self.state, image_enc], training=False)
 
-		return tf.reduce_mean(tf.square(image_enc[0] - image_enc_pred[0]))
+		return tf.reduce_mean(tf.abs(image_enc[0] - image_enc_pred[0]))
 
 	"""
 	Reset state (after an episode)
@@ -491,36 +516,48 @@ class Model:
 
 			# train the image encodet model (and reward model, 1st phase)
 			state_prev = state_init
+			loss = 0.0
 			for i in range(self.replay_sample_length-self.tbptt_length_encoder):
-				state_prev = self.train_image_encoder_model(images, actions, rewards, state_prev,
-					tf.convert_to_tensor(i))
-				print("Epoch {:3d} - Training image encoder model ({}/{})".format(
-					e, i+self.tbptt_length_encoder+1, self.replay_sample_length), end="\r")
+				state_prev, loss_tf = self.train_image_encoder_model(images, actions, rewards,
+					state_prev, tf.convert_to_tensor(i))
+				loss += loss_tf.numpy()
+				print("Epoch {:3d} - Training image encoder model ({}/{}) loss: {:8.5f}".format(
+					e, i+self.tbptt_length_encoder+1, self.replay_sample_length, loss/(i+1)),
+					end="\r")
 			print("")
 
 			for i in range(self.replay_sample_length):
 				image_encs[i].assign(self.model_image_encoder(images[i], training=False))
-				print("Computing image encodings... {} / {}      ".format(i,
+				print("Computing image encodings... {} / {}      ".format(i+1,
 				self.replay_sample_length), end="\r")
 
 			# train the backbone (image encoding, state and reward models)
 			state_prev = state_init
+			loss_total = 0.0
+			loss_reward = 0.0
+			loss_encoding = 0.0
 			for i in range(self.replay_sample_length-self.tbptt_length_backbone):
-				state_prev = self.train_backbone(image_encs, actions, rewards, state_prev,
+				state_prev, loss_total_tf, loss_reward_tf, loss_encoding_tf =\
+					self.train_backbone(image_encs, actions, rewards, state_prev,
 					tf.convert_to_tensor(i))
-				print("Epoch {:3d} - Training the backbone ({}/{})".format(
-					e, i+self.tbptt_length_backbone+1, self.replay_sample_length), end="\r")
+				loss_total += loss_total_tf.numpy()
+				loss_reward += loss_reward_tf.numpy()
+				loss_encoding += loss_encoding_tf.numpy()
+				print("Epoch {:3d} - Training the backbone ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_e: {:8.5f}".format(
+					e, i+self.tbptt_length_backbone+1, self.replay_sample_length,
+					loss_total/(i+1), loss_reward/(i+1), loss_encoding/(i+1)), end="\r")
 			print("")
 			
 			# train the action (policy) models
 			for j in range(self.n_replay_episodes):
-				self.active_action_model = j
 				state_prev = state_init
+				loss = 0.0
 				for i in range(self.replay_sample_length):
-					state_prev = self.train_action_model(image_encs, actions, rewards, state_prev,
-						tf.convert_to_tensor(i))
-					print("Epoch {:3d} - Training action model {} ({}/{})".format(
-						e, j, i+1, self.replay_sample_length), end="\r")
+					state_prev, loss_tf = self.models_action[j].train(image_encs, actions, rewards,
+						state_prev, tf.convert_to_tensor(i))
+					loss += loss_tf.numpy()
+					print("Epoch {:3d} - Training action model {} ({}/{}) loss: {:8.5f}".format(
+						e, j, i+1, self.replay_sample_length, loss/(i+1)), end="\r")
 				print("")
 			
 			self.save_model("model/model")
@@ -566,7 +603,7 @@ class Model:
 		self.model_image_decoder.save_weights("{}_image_decoder.h5".format(filename_prefix))
 		self.model_state.save_weights("{}_state.h5".format(filename_prefix))
 		for i in range(self.n_replay_episodes):
-			self.models_action[i].save_weights("{}_action_{}.h5".format(filename_prefix, i))
+			self.models_action[i].save("{}_action_{}.h5".format(filename_prefix, i))
 		self.model_reward.save_weights("{}_reward.h5".format(filename_prefix))
 		self.model_encoding.save_weights("{}_encoding.h5".format(filename_prefix))
 	
@@ -576,7 +613,7 @@ class Model:
 		self.model_image_decoder.load_weights("{}_image_decoder.h5".format(filename_prefix))
 		self.model_state.load_weights("{}_state.h5".format(filename_prefix))
 		for i in range(self.n_replay_episodes):
-			self.models_action[i].load_weights("{}_action_{}.h5".format(filename_prefix, i))
+			self.models_action[i].load("{}_action_{}.h5".format(filename_prefix, i))
 		self.model_reward.load_weights("{}_reward.h5".format(filename_prefix))
 		self.model_encoding.load_weights("{}_encoding.h5".format(filename_prefix))
 
