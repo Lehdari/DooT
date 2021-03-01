@@ -37,11 +37,12 @@ class Memory:
     
 
     def discount_rewards(self):
-        #discount_scale = -np.log(self.discount_factor)
+        # normalization parameter for rewards
+        discount_scale = -np.log(self.discount_factor)
         for i in range(self.n_episodes):
             reward_cum = 0.0
-            for j in range(self.n_episodes-1, -1, -1):
-                reward_cum = reward_cum*self.discount_factor + self.rewards[j, i]
+            for j in range(self.episode_length-1, -1, -1):
+                reward_cum = reward_cum*self.discount_factor + self.rewards[j, i]*discount_scale
                 self.rewards[j, i] = reward_cum
     
 
