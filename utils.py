@@ -66,9 +66,9 @@ def get_random_action(turn_delta_sigma=3.3, weapon_switch_prob=0.05):
     if random_action[5] and random_action[6]:
         random_action[random.randint(5, 6)] = False
 
-    random_action.append(random.gauss(0, turn_delta_sigma))
-    random_action[14] = np.clip(random_action[14], -10.0, 10.0)
-    #random_action.append(0.0)
+    random_action.append(random.gauss(0.0, turn_delta_sigma))
+    random_action[14] = np.clip(random_action[14], -9.0, 9.0)
+
     return random_action
 
 """
@@ -101,6 +101,6 @@ def mutate_action(action, max_flipped_buttons=4, turn_delta_sigma=1.0, turn_damp
     # apply deviation to the turning delta
     action[14] *= turn_damping
     action[14] += random.gauss(0.0, turn_delta_sigma)
-    action[14] = np.clip(action[14], -10.0, 10.0)
+    action[14] = np.clip(action[14], -9.0, 9.0)
 
     return action

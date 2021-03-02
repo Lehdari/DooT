@@ -24,6 +24,14 @@ class L2Regularizer(regularizers.Regularizer):
 	def __call__(self, x):
 		return self.strength * tf.reduce_mean(tf.square(x))
 
+class MaxRegularizer(regularizers.Regularizer):
+	def __init__(self, strength=1.0, batch_size=8.0):
+		self.strength = tf.Variable(strength)
+		self.batch_size = tf.Variable(batch_size)
+
+	def __call__(self, x):
+		return self.strength * self.batch_size * tf.reduce_max(tf.abs(x))
+
 
 def loss_image(y_true, y_pred):
 	return tf.reduce_mean(tf.abs(y_true - y_pred))
@@ -54,11 +62,12 @@ class ActionModel:
 		])
 		def train(image_encs, actions, rewards, state, i):
 			state = self.model_state([state, image_encs[i]], training=False)
-
 			with tf.GradientTape(persistent=True) as gt:
 				action = self.model_action(state, training=True)
 				reward_pred = self.model_reward([state, action], training=True)
-				loss = -tf.reduce_mean(reward_pred)
+				reward_mean = tf.reduce_mean(reward_pred)
+				loss = -reward_mean
+				loss += tf.square(self.model_action.losses[0])*tf.abs(reward_mean)
 
 				# simulate forward and predict rewards
 				for j in range(1, self.tbptt_length_action):
@@ -67,7 +76,9 @@ class ActionModel:
 					action = self.model_action(state, training=True)
 					reward_pred = self.model_reward([state, action], training=True)
 
-					loss -= tf.reduce_mean(reward_pred)
+					reward_mean = tf.reduce_mean(reward_pred)
+					loss -= reward_mean
+					loss += tf.square(self.model_action.losses[0])*tf.abs(reward_mean)
 			
 			g_model_action = gt.gradient(loss, self.model_action.trainable_variables)
 			
@@ -85,7 +96,8 @@ class ActionModel:
 		x = model.module_dense(self.model_action_i_state, model.state_size, n2=model.state_size)
 
 		self.model_action_o_action = layers.Dense(15,
-			kernel_initializer=model.initializer, use_bias=False, activation="tanh")(x)
+			kernel_initializer=model.initializer, 
+			activity_regularizer=MaxRegularizer(), use_bias=False, activation="tanh")(x)
 		
 		self.model_action = keras.Model(
 			inputs=self.model_action_i_state,
@@ -110,7 +122,7 @@ class Model:
 	def __init__(self, episode_length, n_replay_episodes, n_training_epochs, replay_sample_length):
 		self.initializer = initializers.RandomNormal(stddev=0.02)
 		self.optimizer = keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
-		self.action_optimizer = keras.optimizers.SGD(learning_rate=0.0001)
+		self.action_optimizer = keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
 		self.loss_function = keras.losses.MeanSquaredError()
 		self.loss_image = loss_image
 		#self.loss_action = loss_action
