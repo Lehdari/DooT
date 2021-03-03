@@ -24,7 +24,6 @@ from model import Model
 from trainer_simple import TrainerSimple
 import utils
 import argparse
-#import matplotlib.pyplot as plt
 
 
 def main():
