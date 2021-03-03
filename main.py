@@ -25,6 +25,9 @@ from trainer_simple import TrainerSimple
 import utils
 import argparse
 
+import faulthandler
+faulthandler.enable()
+
 
 def main():
     parser = argparse.ArgumentParser()
