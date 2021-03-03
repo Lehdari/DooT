@@ -3,6 +3,7 @@ import time
 
 
 def main():
+    os.system("export PYTHONFAULTHANDLER=1")
     ret = os.system("python3 main.py")
     while ret != 0:
         time.sleep(2)
