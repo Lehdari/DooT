@@ -35,16 +35,12 @@ def main():
     model_filename = args.model
     model_filename = "model/model" # TODO TEMP
 
-    episodes = 16384
+    runs = 16384
     episode_length = 4096
-    n_replay_episodes = 8
     replay_sample_length = 512
+    n_replay_episodes = 8
     n_training_epochs = 8
     game = init_game(episode_length)
-
-    # Sets time that will pause the engine after each action (in seconds)
-    # Without this everything would go too fast for you to keep track of what's happening.
-    #sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
 
     game.new_episode()
 
@@ -62,30 +58,9 @@ def main():
 
     print("Model setup complete. Starting training episodes")
 
-    for i in range(0, episodes):
-        # game.set_doom_map(choice([
-        #     "map01", "map02", "map03", "map04", "map05",
-        #     "map06", "map07", "map08", "map09", "map10",
-        #     "map11", "map12", "map13", "map14", "map15",
-        #     "map16", "map17", "map18", "map19", "map20"]))
-        game.set_doom_map(choice([ "map01"]))
-
-        game.new_episode()
-        reward_controller.player_start_pos = utils.get_player_pos(game)
-
-        frame_id = 0
-        while not game.is_episode_finished():
-            trainer.step(game, i, frame_id)
-            frame_id += 1
-
-        # if episode_length < 1024 and model.loss_action_avg < 0.001:
-        #     episode_length = int(episode_length*2)
-        #     n_training_epochs = int(n_training_epochs/2)
-        #     print("episode_length: {} n_training_epochs: {}".format(episode_length, n_training_epochs))
-        #     model.episode_length = episode_length
-        #     model.n_training_epochs = n_training_epochs
-        #     trainer.set_episode_length(episode_length)
-        #     game.set_episode_timeout(episode_length)
+    for i in range(runs):
+        memory = trainer.run(game)
+        model.train(memory)
 
     # It will be done automatically anyway but sometimes you need to do it in the middle of the program...
     game.close()

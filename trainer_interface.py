@@ -6,7 +6,7 @@ import tensorflow as tf
 import random
 import math
 import time
-from scipy.signal import argrelextrema
+from random import choice
 from utils import *
 
 import matplotlib.pyplot as plt
@@ -16,9 +16,6 @@ class TrainerInterface:
 	def __init__(self, model, reward, n_episodes, episode_length, minimum_episode_length):
 		self.model = model
 		self.reward = reward
-		self.memory = Memory(n_episodes, episode_length)
-
-		self.replay_reset()
 
 		self.episode_id = 0
 		self.n_replay_episodes = n_episodes
@@ -36,13 +33,6 @@ class TrainerInterface:
 
 		self.reward_cum = 0.0 # cumulative reward
 		self.n_entries = 0
-	
-	"""
-	Reset after an experience replay
-	"""
-	def replay_reset(self):
-		self.n_entries = 0
-		self.memory.clear()
 
 	"""
 	Pick an action to perform next
@@ -58,10 +48,33 @@ class TrainerInterface:
 	
 	def mix_reward(self, reward_model, reward_game, reward_system):
 		return reward_model + reward_game + reward_system
+	
+	def run(self, game):
+		self.memory = Memory(self.n_replay_episodes, self.episode_length)
+		self.episode_id = 0
+		while True:
+			# game.set_doom_map(choice([
+			#     "map01", "map02", "map03", "map04", "map05",
+			#     "map06", "map07", "map08", "map09", "map10",
+			#     "map11", "map12", "map13", "map14", "map15",
+			#     "map16", "map17", "map18", "map19", "map20"]))
+			game.set_doom_map(choice([ "map01"]))
+			game.new_episode()
 
-	def step(self, game, episode_id, frame_id):
+			self.episode_reset()
+			self.reward.player_start_pos = get_player_pos(game)
+
+			frame_id = 0
+			while not game.is_episode_finished():
+				if self.step(game, frame_id):
+					return self.memory
+
+				frame_id += 1
+			
+			self.episode_id += 1
+
+	def step(self, game, frame_id):
 		state_game = game.get_state()
-		self.episode_id = episode_id
 
 		screen_buf = state_game.screen_buffer
 		# advance the model state using the screen buffer
@@ -97,21 +110,16 @@ class TrainerInterface:
 
 		done = game.is_episode_finished()
 		if done:
-			print("\nEpisode {} finished\naverage reward: {:10.3f}"
-				.format(episode_id, self.reward_cum / self.n_entries))
+			print("\nEpisode {} finished, average reward: {:10.3f}"
+				.format(self.episode_id, self.reward_cum / self.n_entries))
 			
 			# overwrite last if minimum episode length was not reached
 			if self.n_entries < self.minimum_episode_length:
 				print("Episode underlength ({}), discarding...".format(self.n_entries))
-				self.episode_reset()
-				return
+				return False
 
 			# Sufficient number of entries gathered, time to train
 			if self.memory.finish_episode():
-				self.model.train(self.memory)
-
-				self.replay_reset()
-			
-			# reset stuff for the new episode
-			self.episode_reset()
-			self.reward.reset_exploration()
+				return True
+		
+		return False
