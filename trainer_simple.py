@@ -20,7 +20,7 @@ class TrainerSimple(TrainerInterface):
             if random.random() < 0.1:
                 action = get_random_action(turn_delta_sigma=5.0,
                     weapon_switch_prob=0.3-0.26*self.epsilon)
-                action[14] = 0.5*self.action_prev[14] + 0.5*action[14]
+                action[14] = 0.8*self.action_prev[14] + 0.2*action[14]
             else:
                 action = mutate_action(self.action_prev, 2, turn_delta_sigma=3.0, turn_damping=0.85,
                     weapon_switch_prob=0.3-0.26*self.epsilon)

@@ -474,7 +474,7 @@ class Model:
 
 	def advance(self, image, action_prev):
 		image = tf.convert_to_tensor(image, dtype=tf.float32) * 0.0039215686274509803 # 1/255
-		action_prev = tf.expand_dims(convert_action_to_continuous(action_prev),0)
+		action_prev = tf.expand_dims(action_prev,0)
 		image_enc = self.model_image_encoder(tf.expand_dims(image, 0), training=False)
 		image_enc_pred = self.model_encoding([self.state, action_prev], training=False)
 
@@ -490,14 +490,13 @@ class Model:
 
 	"""
 	Predict action from the state of the model
-	return: list length of 15: 14 booleans and 1 float
 	"""
 	def predict_action(self, model_id, epsilon=0.0):
 		state_input = (1.0-epsilon)*self.state +\
 			epsilon*tf.random.uniform((1, self.state_size), -1.0, 1.0)
 		action = self.models_action[model_id](state_input, training=False)[0]
 
-		return convert_action_to_mixed(action)
+		return action.numpy()
 
 	def predict_worst_action(self):
 		action = tf.expand_dims(tf.random.normal([15], mean=0.0, stddev=0.01), 0)

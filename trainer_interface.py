@@ -86,7 +86,7 @@ class TrainerInterface:
 		self.action_prev = action # store the action for next step
 
 		# Only pick up the death penalty from the builtin reward system
-		reward_game = game.make_action(action)
+		reward_game = game.make_action(convert_action_to_mixed(action))
 
 		# Fetch rest of the rewards from our own reward system
 		reward_system = self.reward.get_reward(game, action)
@@ -97,15 +97,13 @@ class TrainerInterface:
 		self.reward_cum += reward
 
 		# TODO temp
-		action_print = np.where(action, 1, 0)
+		action_print = np.where(action>0.0, 1, 0)
 		print("{} {:8.3f} | r: {:3.8f} e: {:2.8f}".format(
-			action_print[0:14], action[14], reward, self.epsilon), end="\r")
+			action_print[0:14], action[14]*10.0, reward, self.epsilon), end="\r")
 		# TODO end of temp
 
 		# Save the step into the memory
-		self.memory.store_entry(self.n_entries,
-			screen_buf, convert_action_to_continuous(action), reward)
-
+		self.memory.store_entry(self.n_entries, screen_buf, action, reward)
 		self.n_entries += 1
 
 		done = game.is_episode_finished()

@@ -203,7 +203,7 @@ class Reward():
 
         # penalize for "spinbottiness":
         # heavy penalties for continuous rotation, (hence the turn delta buffering)
-        self.turn_buffer.append(action[14]*0.1)
+        self.turn_buffer.append(action[14])
         turn_delta_buffered = sum(self.turn_buffer)/self.turn_buffer_size
         reward_action -= 8.0*abs(turn_delta_buffered)**3.0
 

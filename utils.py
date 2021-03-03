@@ -41,47 +41,34 @@ def convert_action_to_mixed(action_cont):
 convert action to continuous domain
 """
 def convert_action_to_continuous(action_mixed):
-    action_cont = np.where(action_mixed, 0.9, -0.9)
+    action_cont = np.where(action_mixed, 0.5, -0.5)
     action_cont[14] = action_mixed[14] / 10.0
     return action_cont
 
-"""
-return: list length of 15: 14 booleans and 1 float
-"""
+
 def get_random_action(turn_delta_sigma=3.3, weapon_switch_prob=0.05):
-    random_action = random.choices([True, False], k=7)
-    random_action += [False, False, False, False, False, False, False]
+    random_action = [-0.9+1.8*random.random() for i in range(7)]
+    random_action += [-0.9*random.random() for i in range(7)]
 
     if random.random() < weapon_switch_prob:
-        random_action[random.randint(7,13)] = True
-
-
-    # random_action = [False, False, False, False, False, False, False, False, False, False, False, False, False, False]
-    #random_action = [False, False, False] + random.choices([True, False], k=4) + [False, False, False, False, False, False, False]
-
+        random_action[random.randint(7,13)] = 0.9*random.random()
 
     # prevent simultaneous left/right or forward/back presses
-    if random_action[3] and random_action[4]:
-        random_action[random.randint(3, 4)] = False
-    if random_action[5] and random_action[6]:
-        random_action[random.randint(5, 6)] = False
+    if random_action[3]>0.0 and random_action[4]>0.0:
+        random_action[random.randint(3, 4)] *= -1.0
+    if random_action[5]>0.0 and random_action[6]>0.0:
+        random_action[random.randint(5, 6)] *= -1.0
 
-    random_action.append(random.gauss(0.0, turn_delta_sigma))
-    random_action[14] = np.clip(random_action[14], -9.0, 9.0)
+    random_action.append(random.gauss(0.0, turn_delta_sigma*0.1))
+    random_action[14] = np.clip(random_action[14], -0.9, 0.9)
 
-    return random_action
+    return np.asarray(random_action)
 
-"""
-get null (mixed) action
-"""
+
 def get_null_action():
-    action = np.zeros((15,), dtype=bool).tolist()
-    action[14] = 0.0
-    return action
+    return np.zeros((15,))
 
-"""
-Apply a mutation to an action
-"""
+
 def mutate_action(action, max_flipped_buttons=4, turn_delta_sigma=1.0, turn_damping=0.9,
     weapon_switch_prob=0.03,):
     # flip buttons
@@ -89,18 +76,18 @@ def mutate_action(action, max_flipped_buttons=4, turn_delta_sigma=1.0, turn_damp
         flipped_buttons = random.randint(1,max_flipped_buttons)
         for i in range(flipped_buttons):
             button_id = random.randint(0,13) # id of button to flip
-            action[button_id] = not action[button_id]
+            action[button_id] = -action[button_id]
     
     # reset weapon switching
     for i in range(7,14):
-        action[i] = False
+        action[i] = -0.9*random.random()
     
     if random.random() < weapon_switch_prob:
-        action[random.randint(7,13)] = True
+        action[random.randint(7,13)] = 0.9*random.random()
     
     # apply deviation to the turning delta
     action[14] *= turn_damping
-    action[14] += random.gauss(0.0, turn_delta_sigma)
-    action[14] = np.clip(action[14], -9.0, 9.0)
+    action[14] += random.gauss(0.0, turn_delta_sigma*0.1)
+    action[14] = np.clip(action[14], -0.9, 0.9)
 
-    return action
+    return np.asarray(action)
