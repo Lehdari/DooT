@@ -51,7 +51,6 @@ class TrainerInterface:
 	
 	def run(self, game):
 		self.memory = Memory(self.n_replay_episodes, self.episode_length)
-		self.episode_id = 0
 		while True:
 			# game.set_doom_map(choice([
 			#     "map01", "map02", "map03", "map04", "map05",
