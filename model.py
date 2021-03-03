@@ -66,8 +66,8 @@ class ActionModel:
 				action = self.model_action(state, training=True)
 				reward_pred = self.model_reward([state, action], training=True)
 				reward_mean = tf.reduce_mean(reward_pred)
-				loss = -reward_mean
-				loss += tf.square(self.model_action.losses[0])*tf.abs(reward_mean)
+				loss_reward = -reward_mean
+				loss_reg = 2.0*tf.math.pow(self.model_action.losses[0], 4.0)*tf.abs(reward_mean)
 
 				# simulate forward and predict rewards
 				for j in range(1, self.tbptt_length_action):
@@ -77,15 +77,17 @@ class ActionModel:
 					reward_pred = self.model_reward([state, action], training=True)
 
 					reward_mean = tf.reduce_mean(reward_pred)
-					loss -= reward_mean
-					loss += tf.square(self.model_action.losses[0])*tf.abs(reward_mean)
+					loss_reward -= reward_mean
+					loss_reg += 2.0*tf.math.pow(self.model_action.losses[0], 4.0)*tf.abs(reward_mean)
+				
+				loss_total = loss_reward + loss_reg
 			
-			g_model_action = gt.gradient(loss, self.model_action.trainable_variables)
+			g_model_action = gt.gradient(loss_total, self.model_action.trainable_variables)
 			
 			self.action_optimizer.apply_gradients(zip(g_model_action,
 				self.model_action.trainable_variables))
 			
-			return state, loss
+			return state, loss_total, loss_reward, loss_reg
 		
 		self.train = train
 	
@@ -563,13 +565,19 @@ class Model:
 			# train the action (policy) models
 			for j in range(self.n_replay_episodes):
 				state_prev = state_init
-				loss = 0.0
+				loss_total = 0.0
+				loss_reward = 0.0
+				loss_reg = 0.0
 				for i in range(self.replay_sample_length):
-					state_prev, loss_tf = self.models_action[j].train(image_encs, actions, rewards,
-						state_prev, tf.convert_to_tensor(i))
-					loss += loss_tf.numpy()
-					print("Epoch {:3d} - Training action model {} ({}/{}) loss: {:8.5f}".format(
-						e, j, i+1, self.replay_sample_length, loss/(i+1)), end="\r")
+					state_prev, loss_total_tf, loss_reward_tf, loss_reg_tf =\
+						self.models_action[j].train(image_encs, actions, rewards, state_prev,
+						tf.convert_to_tensor(i))
+					loss_total += loss_total_tf.numpy()
+					loss_reward += loss_reward_tf.numpy()
+					loss_reg += loss_reg_tf.numpy()
+					print("Epoch {:3d} - Training action model {} ({}/{}) l_t: {:8.5f} l_rw: {:8.5f} l_rg: {:8.5f}".format(
+						e, j, i+1, self.replay_sample_length,
+						loss_total/(i+1), loss_reward/(i+1), loss_reg/(i+1)), end="\r")
 				print("")
 			
 			self.save_model("model/model")
