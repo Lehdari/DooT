@@ -39,7 +39,8 @@ def main():
 
     runs = 16384
     episode_length = 4096
-    replay_sample_length = 512
+    min_episode_length = 1024
+    replay_sample_length = 256
     n_replay_episodes = 8
     n_training_epochs = 8
     game = init_game(episode_length)
@@ -56,7 +57,7 @@ def main():
         print("Loading model ({})".format(model_filename))
         model.load_model(model_filename)
     trainer = TrainerSimple(model, reward_controller, n_replay_episodes, episode_length,
-        2*replay_sample_length)
+        min_episode_length)
 
     print("Model setup complete. Starting training episodes")
 

@@ -8,6 +8,7 @@ import math
 import time
 from random import choice
 from utils import *
+from generate_maps import *
 
 import matplotlib.pyplot as plt
 
@@ -22,6 +23,7 @@ class TrainerInterface:
 		self.episode_length = episode_length
 		self.minimum_episode_length = minimum_episode_length
 		self.episode_reset()
+		self.n_discards = 0
 
 	"""
 	Reset after an episode
@@ -50,14 +52,25 @@ class TrainerInterface:
 		return reward_model + reward_game + reward_system
 	
 	def run(self, game):
-		self.memory = Memory(self.n_replay_episodes, self.episode_length)
+		map_names = ["map01", "map02", "map03", "map04", "map05",
+			    "map06", "map07", "map08", "map09", "map10",
+			    "map11", "map12", "map13", "map14", "map15",
+			    "map16", "map17", "map18", "map19", "map20"]
+		
+		self.memory = Memory(self.n_replay_episodes, self.episode_length, discount_factor=0.98)
+		game.close()
+		generate_maps(seed=random.randint(0, 999999999999))
+		game.set_doom_scenario_path("wads/temp/oblige.wad")
+		game.init()
+
 		while True:
-			# game.set_doom_map(choice([
-			#     "map01", "map02", "map03", "map04", "map05",
-			#     "map06", "map07", "map08", "map09", "map10",
-			#     "map11", "map12", "map13", "map14", "map15",
-			#     "map16", "map17", "map18", "map19", "map20"]))
-			game.set_doom_map(choice([ "map01"]))
+			if self.n_discards >= 10: # generate new maps if some of the current ones proves too difficult
+				game.close()
+				generate_maps(seed=random.randint(0, 999999999999))
+				game.set_doom_scenario_path("wads/temp/oblige.wad")
+				game.init()
+			
+			game.set_doom_map(map_names[self.episode_id%self.n_replay_episodes])
 			game.new_episode()
 
 			self.episode_reset()
@@ -69,8 +82,6 @@ class TrainerInterface:
 					return self.memory
 
 				frame_id += 1
-			
-			self.episode_id += 1
 
 	def step(self, game, frame_id):
 		state_game = game.get_state()
@@ -113,7 +124,11 @@ class TrainerInterface:
 			# overwrite last if minimum episode length was not reached
 			if self.n_entries < self.minimum_episode_length:
 				print("Episode underlength ({}), discarding...".format(self.n_entries))
+				self.n_discards += 1
 				return False
+			
+			self.episode_id += 1 # don't increase episode id after discarding
+			self.n_discards = 0
 
 			# Sufficient number of entries gathered, time to train
 			if self.memory.finish_episode():

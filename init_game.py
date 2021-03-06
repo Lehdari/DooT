@@ -12,13 +12,13 @@ def init_game(episode_length):
 
     # Sets path to additional resources wad file which is basically your scenario wad.
     # If not specified default maps will be used and it's pretty much useless... unless you want to play good old Doom.
-    game.set_doom_scenario_path("wads/doom2.wad")
+    game.set_doom_game_path("wads/doom2.wad")
 
     # Sets map to start (scenario .wad files can contain many maps).
     game.set_doom_map("map01")
 
     # Easy difficulty
-    game.set_doom_skill(4)
+    game.set_doom_skill(1)
 
     # Sets resolution. Default is 320X240
     game.set_screen_resolution(vzd.ScreenResolution.RES_320X240)
@@ -106,7 +106,7 @@ def init_game(episode_length):
     # Enables engine output to console.
     #game.set_console_enabled(True)
 
-    game.set_death_penalty(1000)
+    game.set_death_penalty(0)
 
     # Initialize the game. Further configuration won't take any effect from now on.
     game.init()
