@@ -181,9 +181,9 @@ class Model:
 			with tf.GradientTape(persistent=True) as gt:
 				image_enc = self.model_image_encoder(images[i], training=True)
 				state= self.model_state([state_init, image_enc], training=True)
-				reward = self.model_reward([state, actions[i]], training=True)
+				# reward = self.model_reward([state, actions[i]], training=True)
 
-				loss_total = self.loss_function(rewards[i], reward)
+				# loss_total = self.loss_function(rewards[i], reward)
 				loss_total = self.model_image_encoder.losses[0] + self.model_state.losses[0]
 				loss_inverse = tf.zeros_like(loss_total)
 
@@ -192,25 +192,25 @@ class Model:
 					state_prev = state
 					image_enc = self.model_image_encoder(images[i+j], training=True)
 					state= self.model_state([state, image_enc], training=True)
-					reward = self.model_reward([state, actions[i+j]], training=True)
+					# reward = self.model_reward([state, actions[i+j]], training=True)
 					# action_pred = self.model_inverse([image_enc_prev, image_enc], training=True)
 					action_pred = self.model_inverse([state_prev, state], training=True)
 
 					# reward loss
-					loss_total += self.loss_function(rewards[i+j], reward)
+					#loss_total += self.loss_function(rewards[i+j], reward)
 					# regularization loss
 					loss_total += self.model_image_encoder.losses[0] + self.model_state.losses[0]
 					# inverse loss
-					loss_inverse += loss_function_inverse(actions[i+j], action_pred)
+					loss_inverse += loss_function_inverse(actions[i+j-1], action_pred)
 
-				#loss_total += loss_inverse
+				loss_total += loss_inverse
 			
 			# g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
 			# g_model_state = gt.gradient(loss_total, self.model_state.trainable_variables)
 			# g_model_reward = gt.gradient(loss_total, self.model_reward.trainable_variables)
 			
-			g_model_state = gt.gradient(loss_inverse, self.model_state.trainable_variables)
-			g_model_inverse = gt.gradient(loss_inverse, self.model_inverse.trainable_variables)
+			g_model_state = gt.gradient(loss_total, self.model_state.trainable_variables)
+			g_model_inverse = gt.gradient(loss_total, self.model_inverse.trainable_variables)
 		
 			# self.optimizer.apply_gradients(zip(g_model_image_encoder,
 			# 	self.model_image_encoder.trainable_variables))
