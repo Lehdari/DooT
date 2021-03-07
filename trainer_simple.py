@@ -5,8 +5,8 @@ import math
 
 
 class TrainerSimple(TrainerInterface):
-    def episode_reset(self):
-        TrainerInterface.episode_reset(self)
+    def episode_reset(self, model):
+        TrainerInterface.episode_reset(self, model)
 
         self.epsilon = 1.0/(1.0 + math.exp((self.episode_id - 256.0)/48.0))
 

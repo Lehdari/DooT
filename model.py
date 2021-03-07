@@ -739,3 +739,21 @@ class Model:
 		self.model_inverse.load_weights("{}_inverse.h5".format(filename_prefix))
 
 		#self.create_recurrent_module()
+	
+	def create_copy(self):
+		model_copy = Model(
+			self.episode_length,
+			self.n_replay_episodes,
+			self.n_training_epochs,
+			self.replay_sample_length)
+		
+		model_copy.model_image_encoder.set_weights(self.model_image_encoder.get_weights())
+		model_copy.model_image_decoder.set_weights(self.model_image_decoder.get_weights())
+		model_copy.model_state.set_weights(self.model_state.get_weights())
+		for i in range(self.n_replay_episodes):
+			model_copy.models_action[i].model_action.set_weights(self.models_action[i].model_action.get_weights())
+		model_copy.model_reward.set_weights(self.model_reward.get_weights())
+		model_copy.model_encoding.set_weights(self.model_encoding.get_weights())
+		model_copy.model_inverse.set_weights(self.model_inverse.get_weights())
+
+		return model_copy

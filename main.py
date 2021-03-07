@@ -42,16 +42,16 @@ def main():
     if model_filename is not None:
         print("Loading model ({})".format(model_filename))
         model.load_model(model_filename)
-    trainer = TrainerSimple(model, reward_controller, n_replay_episodes, episode_length,
+    trainer = TrainerSimple(reward_controller, n_replay_episodes, episode_length,
         min_episode_length, window_visible)
 
     print("Model setup complete. Starting training episodes")
 
-    memory = trainer.run()
+    memory = trainer.run(model)
     for i in range(runs):
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             # start a new memory gathering run concurrently
-            memory_future = executor.submit(trainer.run)
+            memory_future = executor.submit(trainer.run, model.create_copy())
         
             model.train(memory)
 

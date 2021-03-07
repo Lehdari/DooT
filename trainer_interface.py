@@ -14,9 +14,8 @@ import cv2
 
 
 class TrainerInterface:
-	def __init__(self, model, reward, n_episodes, episode_length, minimum_episode_length,
+	def __init__(self, reward, n_episodes, episode_length, minimum_episode_length,
 		window_visible):
-		self.model = model
 		self.reward = reward
 
 		self.episode_id = 0
@@ -24,15 +23,14 @@ class TrainerInterface:
 		self.episode_length = episode_length
 		self.minimum_episode_length = minimum_episode_length
 		self.window_visible = window_visible
-		self.episode_reset()
 		self.n_discards = 0
 
 	"""
 	Reset after an episode
 	"""
-	def episode_reset(self):
+	def episode_reset(self, model):
 		self.reward.reset()
-		self.model.reset_state()
+		model.reset_state()
 		self.action_prev = get_null_action()
 
 		self.reward_cum = 0.0 # cumulative reward
@@ -59,7 +57,7 @@ class TrainerInterface:
 		game.set_doom_scenario_path("wads/temp/oblige.wad")
 		game.init()
 	
-	def run(self):
+	def run(self, model):
 		game = init_game(self.episode_length, self.window_visible)
 
 		map_names = ["map01", "map02", "map03", "map04", "map05",
@@ -80,12 +78,12 @@ class TrainerInterface:
 			# setup automap scale
 			game.send_game_command('am_scale 0.5')
 
-			self.episode_reset()
+			self.episode_reset(model)
 			self.reward.player_start_pos = get_player_pos(game)
 
 			frame_id = 0
 			while not game.is_episode_finished():
-				if self.step(game, frame_id):
+				if self.step(game, model, frame_id):
 					# cv2.destroyWindow("ViZDoom Automap")
 					# cv2.waitKey(1)
 					game.close()
@@ -94,7 +92,7 @@ class TrainerInterface:
 
 				frame_id += 1
 
-	def step(self, game, frame_id):
+	def step(self, game, model, frame_id):
 		state_game = game.get_state()
 
 		automap = state_game.automap_buffer[:,:,0:1] # use the red channel, should be enough
@@ -104,7 +102,7 @@ class TrainerInterface:
 		# 	cv2.waitKey(1)
 		
 		# advance the model state using the screen buffer
-		reward_model = self.model.advance(screen_buf, self.action_prev).numpy()
+		reward_model = model.advance(screen_buf, self.action_prev).numpy()
 		
 		# pick an action to perform
 		action = self.pick_action(game)
