@@ -9,7 +9,7 @@ oblige_config_easy = {
     "caves": "mixed",
     "liquids": "none",
     "hallways": "mixed",
-    "teleporters": "mixed",
+    "teleporters": "none",
     "steepness": "mixed",
 
     "mons": "some",
@@ -36,9 +36,9 @@ oblige_config_easy = {
     "darkness": "mixed",
     "mon_variety": "mixed",
     "barrels": "some",
-    "doors": "some",
+    "doors": "none",
     "keys": "none",
-    "switches": "some",
+    "switches": "none",
 
     "doom_mon_control": 1,
     "spectre": "none",
