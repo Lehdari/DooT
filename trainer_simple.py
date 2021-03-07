@@ -11,6 +11,9 @@ class TrainerSimple(TrainerInterface):
         self.epsilon = 1.0/(1.0 + math.exp((self.episode_id - 256.0)/48.0))
 
     def pick_action(self, game):
+        action = np.array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1.0+2.0*random.random()])
+        return action
+
         r = random.random()
         if r < self.epsilon:
             if random.random() < 0.05:
