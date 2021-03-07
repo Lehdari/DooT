@@ -1,29 +1,15 @@
 #!/usr/bin/env python3
 
-#####################################################################
-# This script presents how to use the most basic features of the environment.
-# It configures the engine, and makes the agent perform random actions.
-# It also gets current state and reward earned with the action.
-# <episodes> number of episodes are played. 
-# Random combination of buttons is chosen for every action.
-# Game variables from state and last reward are printed.
-#
-# To see the scenario description go to "../../scenarios/README.md"
-#####################################################################
-
-from __future__ import print_function
 import vizdoom as vzd
 import numpy as np
-
-from random import choice
-from time import sleep
+import argparse
+import concurrent.futures
 
 from init_game import init_game
 from reward import Reward
 from model import Model
 from trainer_simple import TrainerSimple
 import utils
-import argparse
 
 import faulthandler
 faulthandler.enable()
@@ -42,16 +28,15 @@ def main():
     min_episode_length = 1024
     replay_sample_length = 256
     n_replay_episodes = 8
-    n_training_epochs = 4
-    window_visible = False
-    game = init_game(episode_length, window_visible)
+    n_training_epochs = 16
+    window_visible = True
 
-    game.new_episode()
+    # game.new_episode()
 
-    player_start_pos = utils.get_player_pos(game)
-    print("Player start pos:", player_start_pos)
+    # player_start_pos = utils.get_player_pos(game)
+    # print("Player start pos:", player_start_pos)
 
-    reward_controller = Reward(player_start_pos)
+    reward_controller = Reward()
     model = Model(episode_length, n_replay_episodes, n_training_epochs, replay_sample_length)
 
     if model_filename is not None:
@@ -62,12 +47,17 @@ def main():
 
     print("Model setup complete. Starting training episodes")
 
+    memory = trainer.run()
     for i in range(runs):
-        memory = trainer.run(game)
-        model.train(memory)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            # start a new memory gathering run concurrently
+            memory_future = executor.submit(trainer.run)
+        
+            model.train(memory)
 
-    # It will be done automatically anyway but sometimes you need to do it in the middle of the program...
-    game.close()
+            # replace memory with the new one
+            del memory
+            memory = memory_future.result()
 
 print()
 print("-------- starting ------------")

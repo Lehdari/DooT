@@ -5,8 +5,8 @@ from utils import *
 
 
 class Reward():
-    def __init__(self, player_start_pos):
-        self.player_start_pos = player_start_pos
+    def __init__(self):
+        # self.player_start_pos = player_start_pos
 
         # exploration
         self.exploration_tile_size = 64.0

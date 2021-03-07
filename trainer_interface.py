@@ -9,6 +9,7 @@ import time
 from random import choice
 from utils import *
 from generate_maps import *
+from init_game import init_game
 import cv2
 
 
@@ -58,11 +59,13 @@ class TrainerInterface:
 		game.set_doom_scenario_path("wads/temp/oblige.wad")
 		game.init()
 	
-	def run(self, game):
+	def run(self):
+		game = init_game(self.episode_length, self.window_visible)
+
 		map_names = ["map01", "map02", "map03", "map04", "map05",
-			    "map06", "map07", "map08", "map09", "map10",
-			    "map11", "map12", "map13", "map14", "map15",
-			    "map16", "map17", "map18", "map19", "map20"]
+			"map06", "map07", "map08", "map09", "map10",
+			"map11", "map12", "map13", "map14", "map15",
+			"map16", "map17", "map18", "map19", "map20"]
 		
 		self.memory = Memory(self.n_replay_episodes, self.episode_length, discount_factor=0.98)
 		self.generate_new_maps(game)
@@ -83,6 +86,10 @@ class TrainerInterface:
 			frame_id = 0
 			while not game.is_episode_finished():
 				if self.step(game, frame_id):
+					# cv2.destroyWindow("ViZDoom Automap")
+					# cv2.waitKey(1)
+					game.close()
+
 					return self.memory
 
 				frame_id += 1
@@ -92,9 +99,9 @@ class TrainerInterface:
 
 		automap = state_game.automap_buffer[:,:,0:1] # use the red channel, should be enough
 		screen_buf = np.concatenate([state_game.screen_buffer, automap], axis=-1)
-		if self.window_visible:
-			cv2.imshow("ViZDoom Automap", automap)
-			cv2.waitKey(1)
+		# if self.window_visible:
+		# 	cv2.imshow("ViZDoom Automap", automap)
+		# 	cv2.waitKey(1)
 		
 		# advance the model state using the screen buffer
 		reward_model = self.model.advance(screen_buf, self.action_prev).numpy()
@@ -115,9 +122,9 @@ class TrainerInterface:
 		self.reward_cum += reward
 
 		# TODO temp
-		action_print = np.where(action>0.0, 1, 0)
-		print("{} {:8.3f} | r: {:3.8f} e: {:2.8f}".format(
-			action_print[0:14], action[14]*10.0, reward, self.epsilon), end="\r")
+		# action_print = np.where(action>0.0, 1, 0)
+		# print("{} {:8.3f} | r: {:3.8f} e: {:2.8f}".format(
+		# 	action_print[0:14], action[14]*10.0, reward, self.epsilon), end="\r")
 		# TODO end of temp
 
 		# Save the step into the memory
