@@ -8,22 +8,18 @@ class TrainerSimple(TrainerInterface):
     def episode_reset(self):
         TrainerInterface.episode_reset(self)
 
-        self.epsilon = math.exp(-(self.episode_id)/64.0)
-        if self.epsilon < 0.01:
-            self.epsilon = 0.01
-        
-        self.epsilon = 0.0
+        self.epsilon = 1.0/(1.0 + math.exp((self.episode_id - 256.0)/48.0))
 
     def pick_action(self, game):
         r = random.random()
         if r < self.epsilon:
-            if random.random() < 0.1:
+            if random.random() < 0.05:
                 action = get_random_action(turn_delta_sigma=5.0,
                     weapon_switch_prob=0.3-0.26*self.epsilon)
-                action[14] = 0.8*self.action_prev[14] + 0.2*action[14]
             else:
-                action = mutate_action(self.action_prev, 2, turn_delta_sigma=3.0, turn_damping=0.85,
+                action = mutate_action(self.action_prev, 2, turn_delta_sigma=4.0, turn_damping=0.9,
                     weapon_switch_prob=0.3-0.26*self.epsilon)
+            action[14] = 0.9*self.action_prev[14] + 0.1*action[14]
         else:
             action = self.model.predict_action(self.memory.active_episode)
 
@@ -35,15 +31,13 @@ class TrainerSimple(TrainerInterface):
                     weapon_switch_prob=0.1-0.08*self.epsilon)
 
         # Add some random walk to epsilon
-        self.epsilon += np.random.normal(scale=1.0/256)
-        self.epsilon = np.clip(self.epsilon, 0.0, 1.0)
+        # self.epsilon += np.random.normal(scale=1.0/128)
+        # self.epsilon = np.clip(self.epsilon, 0.0, 1.0)
 
         return action
 
     def pick_top_replay_entries(self):
-        #return self.memory.get_best_clutch(256) + list(self.memory.get_best_entries(128))
         return self.memory.sequence
 
     def mix_reward(self, reward_model, reward_game, reward_system):
-        return 5.0*reward_model + reward_game + reward_system
-        #return reward_action
+        return 10.0*reward_model + reward_game + reward_system
