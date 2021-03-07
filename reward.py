@@ -145,7 +145,7 @@ class Reward():
         self.health_prev = health
         self.armor_prev = armor
 
-        return 10.0*damage_reward + health_reward + armor_reward
+        return 20.0*damage_reward + health_reward + armor_reward
 
     def get_exploration_reward(self, player_pos):
         tile_x = int(player_pos[0] / self.exploration_tile_size)
