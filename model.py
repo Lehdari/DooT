@@ -171,7 +171,7 @@ class Model:
 	def define_training_functions(self):
 
 		@tf.function(input_signature=[
-			tf.TensorSpec(shape=(self.replay_sample_length, 8, 240, 320, 3), dtype=tf.float32),
+			tf.TensorSpec(shape=(self.replay_sample_length, 8, 240, 320, 4), dtype=tf.float32),
 			tf.TensorSpec(shape=(self.replay_sample_length, 8, 15), dtype=tf.float32),
 			tf.TensorSpec(shape=(self.replay_sample_length, 8), dtype=tf.float32),
 			tf.TensorSpec(shape=(8, self.state_size), dtype=tf.float32),
@@ -394,9 +394,10 @@ class Model:
 	
 
 	def create_image_encoder_model(self, feature_multiplier=1):
-		self.model_image_encoder_i_image = keras.Input(shape=(240, 320, 3))
+		self.model_image_encoder_i_image = keras.Input(shape=(240, 320, 4))
 
-		x = self.module_conv(self.model_image_encoder_i_image,
+		# camera branch
+		x = self.module_conv(self.model_image_encoder_i_image[:,:,:,0:3],
 			4*feature_multiplier, 8*feature_multiplier,
 			k1=(3,2), s1=(3,2), k2=(3,3), s2=(1,2)) #80x80
 		x = self.module_conv(x, 16*feature_multiplier, 16*feature_multiplier) #40x40
@@ -406,14 +407,29 @@ class Model:
 		x = self.module_conv(x, 128*feature_multiplier, 128*feature_multiplier,
 			s1=(1,1), p1="valid", p2="valid") #1x1
 		x = layers.Flatten()(x)
-		self.model_image_encoder_o_image_enc = self.module_dense(x, self.image_enc_size,
+
+		# automap branch
+		y = self.module_conv(self.model_image_encoder_i_image[:,:,:,3:4],
+			2*feature_multiplier, 2*feature_multiplier,
+			k1=(3,2), s1=(3,2), k2=(3,3), s2=(1,2)) #80x80
+		y = self.module_conv(y, 4*feature_multiplier, 4*feature_multiplier) #40x40
+		y = self.module_conv(y, 8*feature_multiplier, 8*feature_multiplier) #20x20
+		y = self.module_conv(y, 16*feature_multiplier, 16*feature_multiplier) #10x10
+		y = self.module_conv(y, 32*feature_multiplier, 32*feature_multiplier, k2=(1,1)) #5x5
+		y = self.module_conv(y, 64*feature_multiplier, 64*feature_multiplier,
+			s1=(1,1), p1="valid", p2="valid") #1x1
+		y = layers.Flatten()(y)
+
+		self.model_image_encoder_o_image_enc = self.module_dense(
+			x, self.image_enc_size,
+			x2=y, n2=self.image_enc_size,
 			act=layers.Activation(activations.tanh, activity_regularizer=L2Regularizer(1.0e-2)))
 
 		self.model_image_encoder = keras.Model(
 			inputs=self.model_image_encoder_i_image,
 			outputs=self.model_image_encoder_o_image_enc,
 			name="model_image_encoder")
-		#self.model_image_encoder.summary()
+		# self.model_image_encoder.summary()
 	
 
 	def create_image_decoder_model(self, feature_multiplier=1):
@@ -428,7 +444,7 @@ class Model:
 		x = self.module_deconv(x, 32*feature_multiplier, 16*feature_multiplier, alpha=1.0e-6) #80x60
 		x = self.module_deconv(x, 16*feature_multiplier, 8*feature_multiplier, k2=(3,3), alpha=1.0e-6) #160x120
 
-		self.model_image_decoder_o_image = self.module_deconv(x, 8*feature_multiplier, 3,
+		self.model_image_decoder_o_image = self.module_deconv(x, 8*feature_multiplier, 4,
 			act=layers.Activation(activations.sigmoid), k2=(3,3), alpha=1.0e-6)
 
 		self.model_image_decoder = keras.Model(
@@ -514,7 +530,7 @@ class Model:
 				self.model_encoding_i_action],
 			outputs=[self.model_encoding_o_image_enc],
 			name="model_encoding")
-		self.model_encoding.summary()
+		# self.model_encoding.summary()
 
 
 	def create_inverse_model(self):
@@ -533,7 +549,7 @@ class Model:
 			inputs=[self.model_inverse_i_state1, self.model_inverse_i_state2],
 			outputs=self.model_inverse_o_action,
 			name="model_inverse")
-		self.model_inverse.summary()
+		# self.model_inverse.summary()
 
 
 	def create_action_models(self):

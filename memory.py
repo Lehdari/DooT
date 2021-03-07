@@ -14,7 +14,7 @@ class Memory:
 
 
     def clear(self):
-        self.images = np.zeros((self.episode_length, self.n_episodes, 240, 320, 3), dtype=np.uint8)
+        self.images = np.zeros((self.episode_length, self.n_episodes, 240, 320, 4), dtype=np.uint8)
         self.actions = np.zeros((self.episode_length, self.n_episodes, 15), dtype=np.float32)
         self.rewards = np.zeros((self.episode_length, self.n_episodes), dtype=np.float32)
 

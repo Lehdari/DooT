@@ -35,15 +35,16 @@ def main():
     parser.add_argument('--model', type=str)
     args = parser.parse_args()
     model_filename = args.model
-    model_filename = "model/model" # TODO TEMP
+    # model_filename = "model/model" # TODO TEMP
 
     runs = 16384
-    episode_length = 4096
+    episode_length = 1024
     min_episode_length = 1024
     replay_sample_length = 256
     n_replay_episodes = 8
-    n_training_epochs = 8
-    game = init_game(episode_length)
+    n_training_epochs = 4
+    window_visible = False
+    game = init_game(episode_length, window_visible)
 
     game.new_episode()
 
@@ -57,7 +58,7 @@ def main():
         print("Loading model ({})".format(model_filename))
         model.load_model(model_filename)
     trainer = TrainerSimple(model, reward_controller, n_replay_episodes, episode_length,
-        min_episode_length)
+        min_episode_length, window_visible)
 
     print("Model setup complete. Starting training episodes")
 

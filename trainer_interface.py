@@ -9,12 +9,12 @@ import time
 from random import choice
 from utils import *
 from generate_maps import *
-
-import matplotlib.pyplot as plt
+import cv2
 
 
 class TrainerInterface:
-	def __init__(self, model, reward, n_episodes, episode_length, minimum_episode_length):
+	def __init__(self, model, reward, n_episodes, episode_length, minimum_episode_length,
+		window_visible):
 		self.model = model
 		self.reward = reward
 
@@ -22,6 +22,7 @@ class TrainerInterface:
 		self.n_replay_episodes = n_episodes
 		self.episode_length = episode_length
 		self.minimum_episode_length = minimum_episode_length
+		self.window_visible = window_visible
 		self.episode_reset()
 		self.n_discards = 0
 
@@ -51,6 +52,12 @@ class TrainerInterface:
 	def mix_reward(self, reward_model, reward_game, reward_system):
 		return reward_model + reward_game + reward_system
 	
+	def generate_new_maps(self, game):
+		game.close()
+		generate_maps(seed=random.randint(0, 999999999999))
+		game.set_doom_scenario_path("wads/temp/oblige.wad")
+		game.init()
+	
 	def run(self, game):
 		map_names = ["map01", "map02", "map03", "map04", "map05",
 			    "map06", "map07", "map08", "map09", "map10",
@@ -58,20 +65,17 @@ class TrainerInterface:
 			    "map16", "map17", "map18", "map19", "map20"]
 		
 		self.memory = Memory(self.n_replay_episodes, self.episode_length, discount_factor=0.98)
-		game.close()
-		generate_maps(seed=random.randint(0, 999999999999))
-		game.set_doom_scenario_path("wads/temp/oblige.wad")
-		game.init()
+		self.generate_new_maps(game)
 
 		while True:
 			if self.n_discards >= 10: # generate new maps if some of the current ones proves too difficult
-				game.close()
-				generate_maps(seed=random.randint(0, 999999999999))
-				game.set_doom_scenario_path("wads/temp/oblige.wad")
-				game.init()
+				self.generate_new_maps(game)
 			
 			game.set_doom_map(map_names[self.episode_id%self.n_replay_episodes])
 			game.new_episode()
+
+			# setup automap scale
+			game.send_game_command('am_scale 0.5')
 
 			self.episode_reset()
 			self.reward.player_start_pos = get_player_pos(game)
@@ -86,10 +90,14 @@ class TrainerInterface:
 	def step(self, game, frame_id):
 		state_game = game.get_state()
 
-		screen_buf = state_game.screen_buffer
+		automap = state_game.automap_buffer[:,:,0:1] # use the red channel, should be enough
+		screen_buf = np.concatenate([state_game.screen_buffer, automap], axis=-1)
+		if self.window_visible:
+			cv2.imshow("ViZDoom Automap", automap)
+			cv2.waitKey(1)
+		
 		# advance the model state using the screen buffer
 		reward_model = self.model.advance(screen_buf, self.action_prev).numpy()
-		#reward_model = 0.0
 		
 		# pick an action to perform
 		action = self.pick_action(game)

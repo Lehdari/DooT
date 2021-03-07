@@ -1,7 +1,7 @@
 import vizdoom as vzd
 
 
-def init_game(episode_length):
+def init_game(episode_length, window_visible):
     # Create DoomGame instance. It will run the game and communicate with you.
     game = vzd.DoomGame()
 
@@ -33,7 +33,10 @@ def init_game(episode_length):
     game.set_labels_buffer_enabled(False)
 
     # Enables buffer with top down map of the current episode/level.
-    game.set_automap_buffer_enabled(False)
+    game.set_automap_buffer_enabled(True)
+    game.set_automap_mode(vzd.AutomapMode.OBJECTS)
+    game.set_automap_rotate(True)
+    game.set_automap_render_textures(False)
 
     # Enables information about all objects present in the current episode/level.
     game.set_objects_info_enabled(False)
@@ -43,7 +46,7 @@ def init_game(episode_length):
 
     # Sets other rendering options (all of these options except crosshair are enabled (set to True) by default)
     game.set_render_hud(True)
-    game.set_render_minimal_hud(False)  # If hud is enabled
+    game.set_render_minimal_hud(True)  # If hud is enabled
     game.set_render_crosshair(False)
     game.set_render_weapon(True)
     game.set_render_decals(True)  # Bullet holes and blood on the walls
@@ -98,7 +101,7 @@ def init_game(episode_length):
     game.set_episode_start_time(14)
 
     # Makes the window appear (turned on by default)
-    game.set_window_visible(True)
+    game.set_window_visible(window_visible)
     
     # Sets ViZDoom mode (PLAYER, ASYNC_PLAYER, SPECTATOR, ASYNC_SPECTATOR, PLAYER mode is default)
     game.set_mode(vzd.Mode.PLAYER)
