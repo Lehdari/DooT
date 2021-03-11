@@ -9,10 +9,12 @@ class TrainerSimple(TrainerInterface):
         TrainerInterface.episode_reset(self, model)
 
         self.epsilon = 1.0/(1.0 + math.exp((self.episode_id - 256.0)/48.0))
+        
+        self.epsilon = 1.0
 
     def pick_action(self, game):
-        action = np.array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1.0+2.0*random.random()])
-        return action
+        # action = np.array([-1.0+2.0*random.random() for i in range(15)])
+        # return action
 
         r = random.random()
         if r < self.epsilon:

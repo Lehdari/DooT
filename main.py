@@ -21,15 +21,18 @@ def main():
     parser.add_argument('--model', type=str)
     args = parser.parse_args()
     model_filename = args.model
-    # model_filename = "model/model" # TODO TEMP
+    model_filename = "model" # TODO TEMP
 
     runs = 16384
     episode_length = 1024
     min_episode_length = 1024
     replay_sample_length = 256
+    # episode_length = 128
+    # min_episode_length = 128
+    # replay_sample_length = 96
     n_replay_episodes = 8
-    n_training_epochs = 16
-    window_visible = True
+    n_training_epochs = 8
+    window_visible = False
 
     # game.new_episode()
 
@@ -40,8 +43,7 @@ def main():
     model = Model(episode_length, n_replay_episodes, n_training_epochs, replay_sample_length)
 
     if model_filename is not None:
-        print("Loading model ({})".format(model_filename))
-        model.load_model(model_filename)
+        model.load_model(model_filename, model_filename)
     trainer = TrainerSimple(reward_controller, n_replay_episodes, episode_length,
         min_episode_length, window_visible)
 
