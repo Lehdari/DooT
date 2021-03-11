@@ -57,24 +57,28 @@ class Memory:
         return memory_full
     
 
-    def compute_states(self, model_state, model_image_encoder):
-        min_episode_length = np.amin(self.episode_lengths)
+    def compute_states(self, model_state, model_image_encoder, end=None):
+        if end is None:
+            end = np.amin(self.episode_lengths)
         state = tf.zeros((self.n_episodes, self.state_size))
-        for i in range(min_episode_length):
+        for i in range(end):
             state = model_state([state, model_image_encoder(self.images[i], training=False)],
                 training=False).numpy()
             self.states[i] = state
-            print("Computing states... ({}/{})".format(i, min_episode_length), end="\r")
+            print("Computing states... ({}/{})".format(i, end), end="\r")
 
 
-    def get_sample(self, length):
+    def get_sample(self, length, model_state=None, model_image_encoder=None):
         min_episode_length = np.amin(self.episode_lengths)
         begin = random.randint(0, min_episode_length-length)
+
+        if model_state is not None and model_image_encoder is not None:
+            self.compute_states(model_state, model_image_encoder, begin)
 
         if begin==0:
             state = tf.zeros((self.n_episodes, self.state_size))
         else:
-            state = tf.convert_to_tensor(self.states[begin])
+            state = tf.convert_to_tensor(self.states[begin-1])
 
         return\
             (tf.convert_to_tensor(self.images[begin:begin+length], dtype=tf.float32) * 0.0039215686274509803,
