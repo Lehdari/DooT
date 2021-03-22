@@ -41,7 +41,7 @@ class TrainerInterface:
 
 	Override this method in child classes to implement more complex decision process
 	"""
-	def pick_action(self, game):
+	def pick_action(self, game, model):
 		# pick an action to perform
 		return get_random_action(weapon_switch_prob=0.03)
 
@@ -101,12 +101,13 @@ class TrainerInterface:
 		# 	cv2.imshow("ViZDoom Automap", automap)
 		# 	cv2.waitKey(1)
 		
-		with tf.device("/cpu:0"):
-			# advance the model state using the screen buffer
-			reward_model = model.advance(screen_buf, self.action_prev).numpy()
-			
-			# pick an action to perform
-			action = self.pick_action(game)
+		#with tf.device("/cpu:0"):
+		# advance the model state using the screen buffer
+		reward_model = model.advance(screen_buf, self.action_prev).numpy()
+		# reward_model = 0.0
+		
+		# pick an action to perform
+		action = self.pick_action(game, model)
 
 		self.action_prev = action # store the action for next step
 

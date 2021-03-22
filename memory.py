@@ -69,20 +69,28 @@ class Memory:
 
 
     def get_sample(self, length, model_state=None, model_image_encoder=None):
-        min_episode_length = np.amin(self.episode_lengths)
-        begin = random.randint(0, min_episode_length-length)
+        # min_episode_length = np.amin(self.episode_lengths)
+        begin = np.array([random.randint(0, l-length-1) for l in self.episode_lengths])
+        #end = begin + length
 
         if model_state is not None and model_image_encoder is not None:
-            self.compute_states(model_state, model_image_encoder, begin)
+            self.compute_states(model_state, model_image_encoder, np.amax(begin))
+        
+        state = np.zeros((self.n_episodes, self.state_size), dtype=np.float32)
 
-        if begin==0:
-            state = tf.zeros((self.n_episodes, self.state_size))
-        else:
-            state = tf.convert_to_tensor(self.states[begin-1])
+        for i in range(self.n_episodes):
+            if begin[i]>0:
+                state[i] = self.states[begin[i]-1, i]
+        
+        i = np.arange(self.n_episodes)
+        j = np.repeat(np.expand_dims(np.arange(length), 1), self.n_episodes, axis=1)
+        
+        images_slice = self.images[begin[np.newaxis,:]+j, i[np.newaxis,:]]
+        actions_slice = self.actions[begin[np.newaxis,:]+j, i[np.newaxis,:]]
+        rewards_slice = self.rewards[begin[np.newaxis,:]+j, i[np.newaxis,:]]
 
         return\
-            (tf.convert_to_tensor(self.images[begin:begin+length], dtype=tf.float32) * 0.0039215686274509803,
-            tf.convert_to_tensor(self.actions[begin:begin+length]),
-            tf.convert_to_tensor(self.rewards[begin:begin+length]),
-            state)
-    
+            (tf.convert_to_tensor(images_slice, dtype=tf.float32) * 0.0039215686274509803,
+            tf.convert_to_tensor(actions_slice),
+            tf.convert_to_tensor(rewards_slice),
+            tf.convert_to_tensor(state))

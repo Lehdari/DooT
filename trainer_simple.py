@@ -11,8 +11,9 @@ class TrainerSimple(TrainerInterface):
         self.epsilon = 1.0/(1.0 + math.exp((self.episode_id - 256.0)/48.0))
         
         self.epsilon = 1.0
+        # self.epsilon = 0.0
 
-    def pick_action(self, game):
+    def pick_action(self, game, model):
         # action = np.array([-1.0+2.0*random.random() for i in range(15)])
         # return action
 
@@ -26,7 +27,7 @@ class TrainerSimple(TrainerInterface):
                     weapon_switch_prob=0.3-0.26*self.epsilon)
             action[14] = 0.9*self.action_prev[14] + 0.1*action[14]
         else:
-            action = self.model.predict_action(self.memory.active_episode)
+            action = model.predict_action(self.memory.active_episode)
 
             if r < self.epsilon*2.0:
                 action = mutate_action(action, 2, turn_delta_sigma=2.0, turn_damping=0.9,

@@ -93,7 +93,6 @@ class ActionModel:
 					discount_falloff *= discount_factor # update dc. falloff according to dc. factor
 				
 				loss_total = (loss_reward + loss_reg) / discount_cum
-
 			
 			g_model_action = gt.gradient(loss_total, self.model_action.trainable_variables)
 			
@@ -103,7 +102,7 @@ class ActionModel:
 			state = self.model_state([state_init, image_encs[i]], training=False)
 			
 			l_norm = 1.0 / self.tbptt_length_action
-			return state, loss_total*l_norm, loss_reward*l_norm, loss_reg*l_norm
+			return state, g_model_action, loss_total*l_norm, loss_reward*l_norm, loss_reg*l_norm
 		
 		self.train = train
 	
@@ -138,8 +137,8 @@ class ActionModel:
 
 class Model:
 	def __init__(self, episode_length, n_replay_episodes, n_training_epochs, replay_sample_length):
-		self.initializer = initializers.RandomNormal(stddev=0.02)
-		self.optimizer = keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
+		self.initializer = initializers.RandomNormal(stddev=0.01)
+		self.optimizer = keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999, clipnorm=0.1, clipvalue=1.0)
 		self.action_optimizer = keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
 		self.loss_function = keras.losses.MeanSquaredError()
 		self.loss_image = loss_image
@@ -183,54 +182,43 @@ class Model:
 		def train_image_encoder_model(images, actions, rewards, state_init, i):
 			with tf.GradientTape(persistent=True) as gt:
 				image_enc = self.model_image_encoder(images[i], training=True)
-				state= self.model_state([state_init, image_enc], training=True)
-				states = [tf.expand_dims(state, axis=-1)]
-				# reward = self.model_reward([state, actions[i]], training=True)
+				state = self.model_state([state_init, image_enc], training=True)
+				reward = self.model_reward([state, actions[i]], training=True)
+				states = [state]
 
-				# loss_total = self.loss_function(rewards[i], reward)
-				loss_total = self.model_image_encoder.losses[0] + self.model_state.losses[0]
-				loss_inverse = tf.zeros_like(loss_total)
+				loss_reward = self.loss_function(rewards[i], reward)
 
 				for j in range(1, self.tbptt_length_encoder):
-					# image_enc_prev = image_enc
-					# state_prev = state
 					image_enc = self.model_image_encoder(images[i+j], training=True)
 					state = self.model_state([state, image_enc], training=True)
-					states.append(tf.expand_dims(state, axis=-1))
-					# reward = self.model_reward([state, actions[i+j]], training=True)
+					reward = self.model_reward([state, actions[i+j]], training=True)
+					states.append(state)
 					
-
 					# reward loss
-					#loss_total += self.loss_function(rewards[i+j], reward)
-					# regularization loss
-					loss_total += self.model_image_encoder.losses[0] + self.model_state.losses[0]
+					loss_reward += self.loss_function(rewards[i+j], reward)
 
-				actions_pred = self.model_inverse(tf.stack(states, axis=-1), training=True)[:,:,:,0]
+				actions_pred = self.model_inverse(tf.expand_dims(tf.stack(states, axis=-1), axis=-1),
+					training=True)[:,:,:,0]
 				actions_true = tf.transpose(actions[i:i+self.tbptt_length_encoder-1], perm=[1, 2, 0])
 				
-				loss_inverse += loss_function_inverse(actions_true, actions_pred)
-				loss_total /= self.tbptt_length_encoder
+				loss_reward /= self.tbptt_length_encoder
+				loss_reward *= 0.1 # TODO TEMP multiplier
+				loss_total = loss_reward
+				loss_inverse = loss_function_inverse(actions_true, actions_pred)
+				loss_inverse *= 10.0 # TODO TEMP multiplier
 				loss_total += loss_inverse
 			
 			g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
-			# g_model_state = gt.gradient(loss_total, self.model_state.trainable_variables)
-			# g_model_reward = gt.gradient(loss_total, self.model_reward.trainable_variables)
+			g_model_state = gt.gradient(loss_total, self.model_state.trainable_variables)
 			g_model_inverse = gt.gradient(loss_total, self.model_inverse.trainable_variables)
-		
-			self.optimizer.apply_gradients(zip(g_model_image_encoder,
-				self.model_image_encoder.trainable_variables))
-			# self.optimizer.apply_gradients(zip(g_model_state,
-			# 	self.model_state.trainable_variables))
-			# self.optimizer.apply_gradients(zip(g_model_reward,
-			# 	self.model_reward.trainable_variables))
-			self.optimizer.apply_gradients(zip(g_model_inverse,
-				self.model_inverse.trainable_variables))
+			g_model_reward = gt.gradient(loss_total, self.model_reward.trainable_variables)
 			
 			state = self.model_state([state_init, self.model_image_encoder(images[i],
 				training=False)], training=False)
 			
 			# l_norm = 1.0 / self.tbptt_length_encoder
-			return state, loss_total, loss_inverse
+			return state, g_model_image_encoder, g_model_state, g_model_inverse, g_model_reward,\
+				loss_total, loss_reward, loss_inverse
 
 
 		@tf.function(input_signature=[
@@ -243,45 +231,50 @@ class Model:
 		def train_backbone_inverse(image_encs, actions, rewards, state_init, i):
 			with tf.GradientTape(persistent=True) as gt:
 				state= self.model_state([state_init, image_encs[i]], training=True)
-				states = [tf.expand_dims(state, axis=-1)]
-				# reward = self.model_reward([state, actions[i]], training=True)
+				reward = self.model_reward([state, actions[i]], training=True)
+				states = [state]
 
-				# loss_total = self.loss_function(rewards[i], reward)
-				loss_total = self.model_state.losses[0]
+				# loss_total = self.model_state.losses[0]
+				loss_reward = self.loss_function(rewards[i], reward)
+				loss_forward = tf.zeros_like(loss_reward)
 
 				for j in range(1, self.tbptt_length_backbone):
+					image_enc_pred = self.model_encoding([image_encs[i+j-1], state, actions[i+j-1]])
+
 					state = self.model_state([state, image_encs[i+j]], training=True)
-					states.append(tf.expand_dims(state, axis=-1))
-					# reward = self.model_reward([state, actions[i+j]], training=True)
+					reward = self.model_reward([state, actions[i+j]], training=True)
+					states.append(state)
 					
 					# reward loss
-					#loss_total += self.loss_function(rewards[i+j], reward)
-					# regularization loss
-					loss_total += self.model_state.losses[0]
+					loss_reward += self.loss_function(rewards[i+j], reward)
+					# forward loss
+					loss_forward += tf.reduce_mean(tf.abs(image_encs[i+j] - image_enc_pred))
 
-				actions_pred = self.model_inverse_backbone(tf.stack(states, axis=-1), training=True)[:,:,:,0]
+				actions_pred = self.model_inverse_backbone(
+					tf.expand_dims(tf.stack(states, axis=-1), axis=-1), training=True)[:,:,:,0]
 				actions_true = tf.transpose(actions[i:i+self.tbptt_length_backbone-1], perm=[1, 2, 0])
 				
-				loss_total /= self.tbptt_length_backbone
+				loss_reward /= self.tbptt_length_backbone
+				loss_reward *= 0.1 # TODO TEMP multiplier
+
+				loss_forward /= (self.tbptt_length_backbone-1)
+
+				loss_total = loss_reward + loss_forward
 				loss_inverse = loss_function_inverse(actions_true, actions_pred)
+				loss_inverse *= 10.0 # TODO TEMP multiplier
 				loss_total += loss_inverse
 			
 			g_model_state = gt.gradient(loss_total, self.model_state.trainable_variables)
-			# g_model_reward = gt.gradient(loss_total, self.model_reward.trainable_variables)
 			g_model_inverse_backbone = gt.gradient(loss_total,
 				self.model_inverse_backbone.trainable_variables)
-		
-			self.optimizer.apply_gradients(zip(g_model_state,
-				self.model_state.trainable_variables))
-			# self.optimizer.apply_gradients(zip(g_model_reward,
-			# 	self.model_reward.trainable_variables))
-			self.optimizer.apply_gradients(zip(g_model_inverse_backbone,
-				self.model_inverse_backbone.trainable_variables))
+			g_model_forward = gt.gradient(loss_total, self.model_encoding.trainable_variables)
+			g_model_reward = gt.gradient(loss_total, self.model_reward.trainable_variables)
 			
 			state = self.model_state([state_init, image_encs[i]], training=False)
 			
 			# l_norm = 1.0 / self.tbptt_length_encoder
-			return state, loss_total, loss_inverse
+			return state, g_model_state, g_model_inverse_backbone, g_model_forward, g_model_reward,\
+				loss_total, loss_reward, loss_forward, loss_inverse
 
 		@tf.function(input_signature=[
 			tf.TensorSpec(shape=(self.replay_sample_length, 8, self.image_enc_size), dtype=tf.float32),
@@ -295,45 +288,45 @@ class Model:
 			discount_cum = 0.0
 			with tf.GradientTape(persistent=True) as gt:
 				state = self.model_state([state_init, image_encs[i]], training=True)
-				reward = self.model_reward([state, actions[i]], training=True)
+				# reward = self.model_reward([state, actions[i]], training=True)
 				image_enc = image_encs[i]
 
-				loss_total = self.model_image_encoder.losses[0] + self.model_state.losses[0]
-				loss_reward = self.loss_function(rewards[i], reward)
-				loss_encoding = tf.zeros_like(loss_reward)
+				# loss_total = self.model_image_encoder.losses[0] + self.model_state.losses[0]
+				# loss_reward = self.loss_function(rewards[i], reward)
+				loss_forward = tf.zeros(shape=())
 
 				for j in range(1, self.tbptt_length_backbone):
 					image_enc = self.model_encoding([image_enc, state, actions[i+j-1]], training=True)
 					state = self.model_state([state, image_enc], training=True)
-					reward = self.model_reward([state, actions[i+j]], training=True)
+					# reward = self.model_reward([state, actions[i+j]], training=True)
 
 					loss_enc_iter = tf.reduce_mean(tf.abs(image_encs[i+j] - image_enc))
-					loss_encoding += loss_enc_iter * discount_factor
-					loss_reward += self.loss_function(rewards[i+j], reward) * discount_factor
-					loss_total += self.model_image_encoder.losses[0] + self.model_state.losses[0]
+					loss_forward += loss_enc_iter * discount_factor
+					# loss_reward += self.loss_function(rewards[i+j], reward) * discount_factor
+					# loss_total += self.model_image_encoder.losses[0] + self.model_state.losses[0]
 
 					# discount falloff according to prediction error
 					discount_cum += discount_factor
-					discount_factor *= tf.clip_by_value(1.0-loss_enc_iter, 0.0, 1.0)
+					discount_factor *= tf.clip_by_value(1.0-loss_enc_iter, 1.0e-10, 1.0)
 				
-				loss_encoding *= 10.0 # TODO TEMP?
-				loss_reward /= discount_cum # normalize by cumulative discount
-				loss_encoding /= discount_cum
-				loss_total += loss_reward + loss_encoding
+				# loss_forward *= 10.0 # TODO TEMP?
+				# loss_reward /= discount_cum # normalize by cumulative discount
+				loss_forward /= discount_cum
+				# loss_total += loss_forward#+ loss_reward
 			
-			g_model_encoding = gt.gradient(loss_total, self.model_encoding.trainable_variables)
-			g_model_state = gt.gradient(loss_total, self.model_state.trainable_variables)
-			g_model_reward = gt.gradient(loss_total, self.model_reward.trainable_variables)
+			g_model_encoding = gt.gradient(loss_forward, self.model_encoding.trainable_variables)
+			# g_model_state = gt.gradient(loss_total, self.model_state.trainable_variables)
+			# g_model_reward = gt.gradient(loss_total, self.model_reward.trainable_variables)
 		
-			self.optimizer.apply_gradients(zip(g_model_encoding,
-				self.model_encoding.trainable_variables))
-			self.optimizer.apply_gradients(zip(g_model_state,
-				self.model_state.trainable_variables))
-			self.optimizer.apply_gradients(zip(g_model_reward,
-				self.model_reward.trainable_variables))
+			# self.optimizer.apply_gradients(zip(g_model_encoding,
+			# 	self.model_encoding.trainable_variables))
+			# self.optimizer.apply_gradients(zip(g_model_state,
+			# 	self.model_state.trainable_variables))
+			# self.optimizer.apply_gradients(zip(g_model_reward,
+			# 	self.model_reward.trainable_variables))
 			
 			state = self.model_state([state_init, image_encs[i]], training=False)
-			return state, loss_total, loss_reward, loss_encoding, discount_cum
+			return state, g_model_encoding, loss_forward, discount_cum
 		
 
 		self.train_image_encoder_model = train_image_encoder_model
@@ -355,14 +348,14 @@ class Model:
 		if n2 is not None:
 			x = layers.Dense(n2, kernel_initializer=self.initializer, use_bias=False)(x)
 			x = layers.BatchNormalization(axis=-1,
-				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
-				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(x)
+				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
+				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
 			x = activations.relu(x, alpha=alpha)
 
 		x = layers.Dense(n, kernel_initializer=self.initializer, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(x)
+			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
+			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
 		x = activations.relu(x, alpha=alpha)
 
 		if use_shortcut:
@@ -396,21 +389,21 @@ class Model:
 			y = layers.Conv2D(n2, (skip_x_kernel, skip_y_kernel),
 				kernel_initializer=self.initializer, use_bias=False, padding="valid")(y)
 			y = layers.BatchNormalization(axis=-1,
-				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
-				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(y)
+				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
+				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(y)
 
 		x = layers.Conv2D(n1, k1, padding=p1, kernel_initializer=self.initializer,
 			strides=s1, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(x)
+			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
+			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
 		x = activations.relu(x, alpha=alpha)
 
 		x = layers.Conv2D(n2, k2, padding=p2, kernel_initializer=self.initializer,
 			strides=s2, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(x)
+			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
+			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
 		x = activations.relu(x, alpha=alpha)
 
 		return layers.Add()([x, y])
@@ -431,21 +424,21 @@ class Model:
 		y = layers.UpSampling2D((pool_x_size, pool_y_size), interpolation="bilinear")(x)
 		y = layers.Conv2D(n2, (1, 1), kernel_initializer=self.initializer, use_bias=False)(y)
 		y = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(y)
+			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
+			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(y)
 
 		x = layers.Conv2DTranspose(n1, k1, padding=p1, kernel_initializer=self.initializer,
 			strides=s1, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(x)
+			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
+			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
 		x = activations.relu(x, alpha=alpha)
 
 		x = layers.Conv2DTranspose(n2, k2, padding=p2, kernel_initializer=self.initializer,
 			strides=s2, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.1),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.1))(x)
+			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
+			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
 		x = activations.relu(x, alpha=alpha)
 
 		x = layers.Add()([x, y])
@@ -454,6 +447,31 @@ class Model:
 			x = act(x)
 		
 		return x
+	
+
+	def module_inception(self, x, n=[], k=[], alpha=0.001):
+		n_total = sum(n)
+
+		y = x
+		if n_total != x.shape[3]:
+			y = layers.Conv2D(n_total, (1, 1),
+				kernel_initializer=self.initializer, use_bias=False)(y)
+			y = layers.BatchNormalization(axis=-1,
+				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
+				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(y)
+
+		xv = []
+		for i in range(len(n)):
+			xv.append(layers.Conv2D(n[i], k[i], padding="same",
+				kernel_initializer=self.initializer, use_bias=False)(x))
+			xv[-1] = layers.BatchNormalization(axis=-1,
+				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
+				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(xv[-1])
+			xv[-1] = activations.relu(xv[-1], alpha=alpha)
+
+		x = layers.concatenate(xv)
+
+		return layers.Add()([x, y])
 	
 
 	def create_image_encoder_model(self, feature_multiplier=1):
@@ -531,12 +549,12 @@ class Model:
 
 		# state output
 		s = self.module_dense(x, self.state_size)
-		s = layers.Dense(self.image_enc_size, kernel_initializer=self.initializer,
+		s = layers.Dense(self.state_size, kernel_initializer=self.initializer,
 			use_bias=False, activation="tanh", activity_regularizer=L2Regularizer(5.0e-2))(s)
 		
 		# gate output value for previous state feedthrough
 		#g1 = self.module_dense(x, self.state_size)
-		g1 = layers.Dense(self.image_enc_size, kernel_initializer=self.initializer,
+		g1 = layers.Dense(self.state_size, kernel_initializer=self.initializer,
 			use_bias=False, activation="sigmoid")(x)#(g1)
 
 		# gate output value for new state (1 - g1)
@@ -559,7 +577,9 @@ class Model:
 		self.model_reward_i_state = keras.Input(shape=(self.state_size))
 		self.model_reward_i_action = keras.Input(shape=(15))
 
-		x = layers.concatenate([self.model_reward_i_state, self.model_reward_i_action])
+		x = self.module_dense(self.model_reward_i_state, self.state_size,
+			x2=self.model_reward_i_action, n2=self.state_size)
+		x = self.module_dense(x, self.state_size, n2=self.state_size)
 		x = self.module_dense(x, self.state_size, n2=self.state_size)
 
 		self.model_reward_o_reward_step = layers.Dense(1,
@@ -569,7 +589,7 @@ class Model:
 			inputs=[self.model_reward_i_state, self.model_reward_i_action],
 			outputs=[self.model_reward_o_reward_step],
 			name="model_reward")
-		#self.model_reward.summary()
+		# self.model_reward.summary()
 	
 
 	# predict encoding of next image from state and action
@@ -583,9 +603,10 @@ class Model:
 		x = self.module_dense(
 			self.model_encoding_i_image_enc, self.image_enc_size,
 			x2=y, n2=self.state_size+self.image_enc_size)
+		x = self.module_dense(x, self.image_enc_size, n2=self.image_enc_size)
 
 		self.model_encoding_o_image_enc = layers.Dense(self.image_enc_size,
-			kernel_initializer=self.initializer, use_bias=False, activation="tanh")(x)
+			kernel_initializer=self.initializer, activation="tanh")(x)
 
 		self.model_encoding = keras.Model(
 			inputs=[self.model_encoding_i_image_enc,
@@ -600,21 +621,31 @@ class Model:
 		l_e = self.tbptt_length_encoder # alias for easier usage
 		s8 = int(self.state_size/8)
 
-		self.model_inverse_i_states = keras.Input(shape=(self.state_size, 1, l_e))
+		self.model_inverse_i_states = keras.Input(shape=(self.state_size, l_e, 1))
 
-		x = self.module_conv(self.model_inverse_i_states, l_e*2, l_e*4,
-			k1=(1,1), k2=(1,1), s1=(1,1), s2=(1,1))
-		x = self.module_deconv(x, l_e*4, l_e*4, k1=(1,3), k2=(1,l_e-3), s1=(1,1), s2=(1,1),
-			p1="valid", p2="valid")
+		i_n = [8, 8, 8, 8]
+		n = sum(i_n)
+		x = self.module_inception(self.model_inverse_i_states, i_n, [(1,3), (1,5), (1,7), (1,9)])
+		x = self.module_inception(x, i_n, [(1,1), (1,3), (1,5), (1,7)])
 
-		x = self.module_conv(x, l_e*4, l_e*4, k1=(s8+1,1), k2=(s8+1,1),
+		x = self.module_conv(x, n, n, k1=(1,3), k2=(1,2),
+			s1=(1,1), s2=(1,1), p1="same", p2="valid")
+		x = self.module_inception(x, i_n, [(1,1), (3,3), (5,5), (7,7)])
+
+		x = self.module_conv(x, n, n, k1=(s8+1,1), k2=(s8+1,1),
 			s1=(1,1), s2=(1,1), p1="valid", p2="valid")
-		x = self.module_conv(x, l_e*6, l_e*6, k1=(s8+1,1), k2=(s8+1,1),
+		x = self.module_inception(x, i_n, [(1,1), (3,3), (5,5), (7,7)])
+
+		x = self.module_conv(x, n, n, k1=(s8+1,1), k2=(s8+1,1),
 			s1=(1,1), s2=(1,1), p1="valid", p2="valid")
-		x = self.module_conv(x, l_e*8, l_e*8, k1=(s8+1,1), k2=(s8+1,1),
+		x = self.module_inception(x, i_n, [(1,1), (3,3), (5,5), (7,7)])
+
+		x = self.module_conv(x, n, n, k1=(s8+1,1), k2=(s8+1,1),
 			s1=(1,1), s2=(1,1), p1="valid", p2="valid")
-		self.model_inverse_o_actions = layers.Conv2D(1, kernel_size=(int(self.state_size/4)-14,1),
-			padding="valid", activation="tanh")(x)
+		x = self.module_inception(x, i_n, [(1,1), (3,3), (5,5), (7,7)])
+
+		self.model_inverse_o_actions = layers.Conv2D(1,
+			kernel_size=(int(self.state_size/4)-14,1), padding="valid", activation="tanh")(x)
 
 		self.model_inverse = keras.Model(
 			inputs=self.model_inverse_i_states,
@@ -627,19 +658,31 @@ class Model:
 		l_e = self.tbptt_length_backbone # alias for easier usage
 		s8 = int(self.state_size/8)
 
-		self.model_inverse_backbone_i_states = keras.Input(shape=(self.state_size, 1, l_e))
+		self.model_inverse_backbone_i_states = keras.Input(shape=(self.state_size, l_e, 1))
 
-		x = self.module_conv(self.model_inverse_backbone_i_states, l_e, l_e,
-			k1=(1,1), k2=(1,1), s1=(1,1), s2=(1,1))
-		x = self.module_deconv(x, l_e, l_e, k1=(1,int(l_e/2)), k2=(1,l_e-int(l_e/2)),
-			s1=(1,1), s2=(1,1), p1="valid", p2="valid")
+		i_n = [8, 8, 8, 8]
+		n = sum(i_n)
+		x = self.module_inception(self.model_inverse_backbone_i_states,
+			i_n, [(1,3), (1,5), (1,9), (1,17)])
+		x = self.module_inception(x, i_n, [(1,3), (1,5), (1,9), (1,17)])
+		x = self.module_inception(x, i_n, [(1,3), (1,5), (1,9), (1,17)])
 
-		x = self.module_conv(x, l_e*2, l_e*2, k1=(s8+1,1), k2=(s8+1,1),
+		x = self.module_conv(x, n, n, k1=(1,3), k2=(1,2),
+			s1=(1,1), s2=(1,1), p1="same", p2="valid")
+		x = self.module_inception(x, i_n, [(1,1), (3,3), (5,5), (7,7)])
+
+		x = self.module_conv(x, n, n, k1=(s8+1,1), k2=(s8+1,1),
 			s1=(1,1), s2=(1,1), p1="valid", p2="valid")
-		x = self.module_conv(x, l_e*3, l_e*3, k1=(s8+1,1), k2=(s8+1,1),
+		x = self.module_inception(x, i_n, [(1,1), (3,3), (5,5), (7,7)])
+
+		x = self.module_conv(x, n, n, k1=(s8+1,1), k2=(s8+1,1),
 			s1=(1,1), s2=(1,1), p1="valid", p2="valid")
-		x = self.module_conv(x, l_e*4, l_e*4, k1=(s8+1,1), k2=(s8+1,1),
+		x = self.module_inception(x, i_n, [(1,1), (3,3), (5,5), (7,7)])
+
+		x = self.module_conv(x, n, n, k1=(s8+1,1), k2=(s8+1,1),
 			s1=(1,1), s2=(1,1), p1="valid", p2="valid")
+		x = self.module_inception(x, i_n, [(1,1), (3,3), (5,5), (7,7)])
+		
 		self.model_inverse_backbone_o_actions = layers.Conv2D(1,
 			kernel_size=(int(self.state_size/4)-14,1), padding="valid", activation="tanh")(x)
 
@@ -722,18 +765,53 @@ class Model:
 			# train the image encodet model (and reward model, 1st phase)
 			state_prev = state_init
 			loss_total = 0.0
+			loss_reward = 0.0
 			loss_inverse = 0.0
+			g_model_image_encoder = None
+			g_model_state = None
+			g_model_inverse = None
+			g_model_reward = None
 			for i in range(self.replay_sample_length-self.tbptt_length_encoder):
-				state_prev, loss_total_tf, loss_inverse_tf =\
+				state_prev, gi_model_image_encoder, gi_model_state, gi_model_inverse, gi_model_reward,\
+					loss_total_tf, loss_reward_tf, loss_inverse_tf =\
 					self.train_image_encoder_model(images, actions, rewards,
 					state_prev, tf.convert_to_tensor(i))
+				
 				loss_total += loss_total_tf.numpy()
+				loss_reward += loss_reward_tf.numpy()
 				loss_inverse += loss_inverse_tf.numpy()
-				print("Epoch {:3d} - Training image encoder model ({}/{}) l_t: {:8.5f} l_i: {:8.5f}".format(
+
+				print("Epoch {:3d} - Training image encoder model ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_i: {:8.5f}".format(
 					e, i+self.tbptt_length_encoder+1, self.replay_sample_length,
-					loss_total/(i+1), loss_inverse/(i+1)),
+					loss_total/(i+1), loss_reward/(i+1), loss_inverse/(i+1)),
 					end="\r")
+				
+				if g_model_image_encoder is None:
+					g_model_image_encoder = gi_model_image_encoder
+				else:
+					g_model_image_encoder = [a+b for a,b in zip(g_model_image_encoder, gi_model_image_encoder)]
+
+				if g_model_state is None:
+					g_model_state = gi_model_state
+				else:
+					g_model_state = [a+b for a,b in zip(g_model_state, gi_model_state)]
+
+				if g_model_inverse is None:
+					g_model_inverse = gi_model_inverse
+				else:
+					g_model_inverse = [a+b for a,b in zip(g_model_inverse, gi_model_inverse)]
+
+				if g_model_reward is None:
+					g_model_reward = gi_model_reward
+				else:
+					g_model_reward = [a+b for a,b in zip(g_model_reward, gi_model_reward)]
 			print("")
+			
+			self.optimizer.apply_gradients(zip(g_model_image_encoder,
+				self.model_image_encoder.trainable_variables))
+			self.optimizer.apply_gradients(zip(g_model_inverse,
+				self.model_inverse.trainable_variables))
+
 
 			for i in range(self.replay_sample_length):
 				image_encs[i].assign(self.model_image_encoder(images[i], training=False))
@@ -743,56 +821,108 @@ class Model:
 			# train backbone with inverse model
 			state_prev = state_init
 			loss_total = 0.0
+			loss_reward = 0.0
+			loss_forward = 0.0
 			loss_inverse = 0.0
+			g_model_inverse_backbone = None
+			g_model_forward = None
 			for i in range(self.replay_sample_length-self.tbptt_length_backbone):
-				state_prev, loss_total_tf, loss_inverse_tf =\
+				state_prev,\
+					gi_model_state, gi_model_inverse_backbone, gi_model_forward, gi_model_reward,\
+					loss_total_tf, loss_reward_tf, loss_forward_tf, loss_inverse_tf =\
 					self.train_backbone_inverse(image_encs, actions, rewards,
 					state_prev, tf.convert_to_tensor(i))
 				loss_total += loss_total_tf.numpy()
+				loss_reward += loss_reward_tf.numpy()
+				loss_forward += loss_forward_tf.numpy()
 				loss_inverse += loss_inverse_tf.numpy()
-				print("Epoch {:3d} - Training the backbone(inverse) ({}/{}) l_t: {:8.5f} l_i: {:8.5f}".format(
+				print("Epoch {:3d} - Training the backbone ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_f: {:8.5f} l_i: {:8.5f}".format(
 					e, i+self.tbptt_length_backbone+1, self.replay_sample_length,
-					loss_total/(i+1), loss_inverse/(i+1)),
+					loss_total/(i+1), loss_reward/(i+1), loss_forward/(i+1), loss_inverse/(i+1)),
 					end="\r")
+				
+				if g_model_state is None:
+					g_model_state = gi_model_state
+				else:
+					g_model_state = [a+b for a,b in zip(g_model_state, gi_model_state)]
+
+				if g_model_inverse_backbone is None:
+					g_model_inverse_backbone = gi_model_inverse_backbone
+				else:
+					g_model_inverse_backbone = [a+b for a,b in zip(g_model_inverse_backbone, gi_model_inverse_backbone)]
+
+				if g_model_forward is None:
+					g_model_forward = gi_model_forward
+				else:
+					g_model_forward = [a+b for a,b in zip(g_model_forward, gi_model_forward)]
+
+				if g_model_reward is None:
+					g_model_reward = gi_model_reward
+				else:
+					g_model_reward = [a+b for a,b in zip(g_model_reward, gi_model_reward)]
+
 			print("")
 
-			# # train the backbone (image encoding, state and reward models)
-			# state_prev = state_init
+			# train the forward model
+			state_prev = state_init
 			# loss_total = 0.0
 			# loss_reward = 0.0
-			# loss_encoding = 0.0
-			# discount_cum = 0.0 # discount_cum signifies successful prediction falloff volume - "confidence"
-			# for i in range(self.replay_sample_length-self.tbptt_length_backbone):
-			# 	state_prev, loss_total_tf, loss_reward_tf, loss_encoding_tf, discount_cum_tf =\
-			# 		self.train_backbone(image_encs, actions, rewards, state_prev,
-			# 		tf.convert_to_tensor(i))
-			# 	loss_total += loss_total_tf.numpy()
-			# 	loss_reward += loss_reward_tf.numpy()
-			# 	loss_encoding += loss_encoding_tf.numpy()
-			# 	discount_cum += discount_cum_tf.numpy()
-			# 	print("Epoch {:3d} - Training the backbone ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_e: {:8.5f} d_c: {:8.5f}".format(
-			# 		e, i+self.tbptt_length_backbone+1, self.replay_sample_length,
-			# 		loss_total/(i+1), loss_reward/(i+1), loss_encoding/(i+1), discount_cum/(i+1)), end="\r")
-			# print("")
+			loss_forward = 0.0
+			discount_cum = 0.0 # discount_cum signifies successful prediction falloff volume - "confidence"
+			for i in range(self.replay_sample_length-self.tbptt_length_backbone):
+				state_prev, gi_model_encoding, loss_forward_tf, discount_cum_tf =\
+					self.train_backbone(image_encs, actions, rewards, state_prev,
+					tf.convert_to_tensor(i))
+				# loss_total += loss_total_tf.numpy()
+				# loss_reward += loss_reward_tf.numpy()
+				loss_forward += loss_forward_tf.numpy()
+				discount_cum += discount_cum_tf.numpy()
+				print("Epoch {:3d} - Training forward model ({}/{}) l_f: {:8.5f} d_c: {:8.5f}".format(
+					e, i+self.tbptt_length_backbone+1, self.replay_sample_length,
+					loss_forward/(i+1), discount_cum/(i+1)), end="\r")
+
+				if g_model_forward is None:
+					g_model_forward = gi_model_forward
+				else:
+					g_model_forward = [a+b for a,b in zip(g_model_forward, gi_model_forward)]
+			print("")
 			
-			# # train the action (policy) models
-			# train_discount_factor = np.math.exp(-1.0/(discount_cum/(i+1))) # use prediction confidence as a basis for dc. factor
-			# for j in range(self.n_replay_episodes):
-			# 	state_prev = state_init
-			# 	loss_total = 0.0
-			# 	loss_reward = 0.0
-			# 	loss_reg = 0.0
-			# 	for i in range(self.replay_sample_length):
-			# 		state_prev, loss_total_tf, loss_reward_tf, loss_reg_tf =\
-			# 			self.models_action[j].train(image_encs, actions, rewards, state_prev,
-			# 			tf.convert_to_tensor(i), tf.convert_to_tensor(train_discount_factor))
-			# 		loss_total += loss_total_tf.numpy()
-			# 		loss_reward += loss_reward_tf.numpy()
-			# 		loss_reg += loss_reg_tf.numpy()
-			# 		print("Epoch {:3d} - Training action model {} ({}/{}) l_t: {:8.5f} l_rw: {:8.5f} l_rg: {:8.5f}".format(
-			# 			e, j, i+1, self.replay_sample_length,
-			# 			loss_total/(i+1), loss_reward/(i+1), loss_reg/(i+1)), end="\r")
-			# 	print("")
+			# train the action (policy) models
+			train_discount_factor = np.math.exp(-1.0/(discount_cum/(i+1))) # use prediction confidence as a basis for dc. factor
+			for j in range(self.n_replay_episodes):
+				state_prev = state_init
+				loss_total = 0.0
+				loss_reward = 0.0
+				loss_reg = 0.0
+				g_model_action = None
+				for i in range(self.replay_sample_length):
+					state_prev, gi_model_action, loss_total_tf, loss_reward_tf, loss_reg_tf =\
+						self.models_action[j].train(image_encs, actions, rewards, state_prev,
+						tf.convert_to_tensor(i), tf.convert_to_tensor(train_discount_factor))
+					loss_total += loss_total_tf.numpy()
+					loss_reward += loss_reward_tf.numpy()
+					loss_reg += loss_reg_tf.numpy()
+					print("Epoch {:3d} - Training action model {} ({}/{}) l_t: {:8.5f} l_rw: {:8.5f} l_rg: {:8.5f}".format(
+						e, j, i+1, self.replay_sample_length,
+						loss_total/(i+1), loss_reward/(i+1), loss_reg/(i+1)), end="\r")
+					
+					if g_model_action is None:
+						g_model_action = gi_model_action
+					else:
+						g_model_action = [a+b for a,b in zip(g_model_action, gi_model_action)]
+
+				self.optimizer.apply_gradients(zip(g_model_action,
+					self.models_action[j].model_action.trainable_variables))
+			print("")
+			
+			self.optimizer.apply_gradients(zip(g_model_state,
+				self.model_state.trainable_variables))
+			self.optimizer.apply_gradients(zip(g_model_inverse_backbone,
+				self.model_inverse_backbone.trainable_variables))
+			self.optimizer.apply_gradients(zip(g_model_reward,
+				self.model_reward.trainable_variables))
+			self.optimizer.apply_gradients(zip(g_model_forward,
+				self.model_encoding.trainable_variables))
 			
 			self.save_model("model", "model")
 
