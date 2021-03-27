@@ -101,13 +101,16 @@ class TrainerInterface:
 		# 	cv2.imshow("ViZDoom Automap", automap)
 		# 	cv2.waitKey(1)
 		
-		#with tf.device("/cpu:0"):
-		# advance the model state using the screen buffer
-		reward_model = model.advance(screen_buf, self.action_prev).numpy()
-		# reward_model = 0.0
-		
-		# pick an action to perform
-		action = self.pick_action(game, model)
+		device = "/cpu:0"
+		if self.episode_id < self.n_replay_episodes:
+			device="/gpu:0"
+		with tf.device(device):
+			# advance the model state using the screen buffer
+			reward_model = model.advance(screen_buf, self.action_prev).numpy()
+			# reward_model = 0.0
+			
+			# pick an action to perform
+			action = self.pick_action(game, model)
 
 		self.action_prev = action # store the action for next step
 

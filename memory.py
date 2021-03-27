@@ -8,7 +8,7 @@ class Memory:
         self.n_episodes = n_episodes
         self.episode_length = episode_length
         self.discount_factor = discount_factor
-        self.state_size = 256 # model internal state size
+        self.state_size = 512 # model internal state size
 
         self.clear()
 
