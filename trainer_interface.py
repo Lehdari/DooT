@@ -83,7 +83,7 @@ class TrainerInterface:
 
 			frame_id = 0
 			while not game.is_episode_finished():
-				if self.step(game, model, frame_id):
+				if self.step(game, model, frame_id): # step returns true when memory is full
 					# cv2.destroyWindow("ViZDoom Automap")
 					# cv2.waitKey(1)
 					game.close()
@@ -148,6 +148,8 @@ class TrainerInterface:
 			
 			self.episode_id += 1 # don't increase episode id after discarding
 			self.n_discards = 0
+
+			model.save_episode_state_images(self.episode_id)
 
 			# Sufficient number of entries gathered, time to train
 			if self.memory.finish_episode():

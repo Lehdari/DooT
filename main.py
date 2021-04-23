@@ -24,15 +24,16 @@ def main():
     model_filename = "model" # TODO TEMP
 
     runs = 16384
-    episode_length = 4096
-    min_episode_length = 1024
-    replay_sample_length = 256
-    # episode_length = 128
-    # min_episode_length = 128
-    # replay_sample_length = 96
+    # episode_length = 4096
+    # min_episode_length = 1024
+    # replay_sample_length = 256
+    episode_length = 128
+    min_episode_length = 128
+    replay_sample_length = 96
     n_replay_episodes = 8
     n_training_epochs = 8
     window_visible = False
+    output_visual_log = False
 
     # game.new_episode()
 
@@ -40,7 +41,9 @@ def main():
     # print("Player start pos:", player_start_pos)
 
     reward_controller = Reward()
-    model = Model(episode_length, n_replay_episodes, n_training_epochs, replay_sample_length)
+    model = Model(episode_length, n_replay_episodes,
+        n_training_epochs, replay_sample_length,
+        output_visual_log)
 
     if model_filename is not None:
         model.load_model(model_filename, model_filename)

@@ -46,4 +46,4 @@ class TrainerSimple(TrainerInterface):
         return self.memory.sequence
 
     def mix_reward(self, reward_model, reward_game, reward_system):
-        return 10.0*reward_model + reward_game + reward_system
+        return reward_model + reward_game + reward_system

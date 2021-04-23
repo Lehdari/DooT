@@ -8,7 +8,7 @@ class Memory:
         self.n_episodes = n_episodes
         self.episode_length = episode_length
         self.discount_factor = discount_factor
-        self.state_size = 512 # model internal state size
+        self.state_size = 256 # model internal state size
 
         self.clear()
 
@@ -61,9 +61,11 @@ class Memory:
         if end is None:
             end = np.amin(self.episode_lengths)
         state = tf.zeros((self.n_episodes, self.state_size))
+        action = tf.zeros(shape=(8,15), dtype=tf.float32)
         for i in range(end):
-            state = model_state([state, model_image_encoder(self.images[i], training=False)],
+            state = model_state([state, model_image_encoder(self.images[i], training=False), action],
                 training=False).numpy()
+            action = self.actions[i]
             self.states[i] = state
             print("Computing states... ({}/{})".format(i, end), end="\r")
 
@@ -79,8 +81,7 @@ class Memory:
         state = np.zeros((self.n_episodes, self.state_size), dtype=np.float32)
 
         for i in range(self.n_episodes):
-            if begin[i]>0:
-                state[i] = self.states[begin[i]-1, i]
+            state[i] = self.states[begin[i], i]
         
         i = np.arange(self.n_episodes)
         j = np.repeat(np.expand_dims(np.arange(length), 1), self.n_episodes, axis=1)

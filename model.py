@@ -11,6 +11,7 @@ from tensorflow.compat.v1 import ConfigProto
 from tensorflow.compat.v1 import InteractiveSession
 import gc
 import os
+import cv2
 
 
 config = ConfigProto()
@@ -19,11 +20,18 @@ session = InteractiveSession(config=config)
 
 
 class L2Regularizer(regularizers.Regularizer):
-	def __init__(self, strength):
+	def __init__(self, strength=1.0):
 		self.strength = tf.Variable(strength)
 
 	def __call__(self, x):
 		return self.strength * tf.reduce_mean(tf.square(x))
+
+class L8Regularizer(regularizers.Regularizer):
+	def __init__(self, strength=1.0):
+		self.strength = tf.Variable(strength)
+
+	def __call__(self, x):
+		return self.strength * tf.reduce_mean(tf.math.pow(x, 8.0))
 
 class MaxRegularizer(regularizers.Regularizer):
 	def __init__(self, strength=1.0, batch_size=8.0):
@@ -67,7 +75,7 @@ class ActionModel:
 		def train(image_encs, actions, rewards, state_init, i, discount_factor):
 			discount_falloff = 1.0 # iterative discount factor
 			discount_cum = 0.0
-			state = self.model_state([state_init, image_encs[i]], training=False)
+			state = self.model_state([state_init, image_encs[i], actions[i-1]], training=False)
 			with tf.GradientTape(persistent=True) as gt:
 				action = self.model_action(state, training=True)
 				reward = self.model_reward([state, action], training=True)
@@ -80,7 +88,7 @@ class ActionModel:
 				# simulate forward and predict rewards
 				for j in range(1, self.tbptt_length_action):
 					image_enc = self.model_forward([image_enc, state, action], training=False)
-					state = self.model_state([state, image_enc], training=False)
+					state = self.model_state([state, image_enc, action], training=False)
 					action = self.model_action(state, training=True)
 					reward = self.model_reward([state, action], training=True)
 
@@ -99,7 +107,7 @@ class ActionModel:
 			self.action_optimizer.apply_gradients(zip(g_model_action,
 				self.model_action.trainable_variables))
 			
-			state = self.model_state([state_init, image_encs[i]], training=False)
+			state = self.model_state([state_init, image_encs[i], actions[i-1]], training=False)
 			
 			l_norm = 1.0 / self.tbptt_length_action
 			return state, g_model_action, loss_total*l_norm, loss_reward*l_norm, loss_reg*l_norm
@@ -114,7 +122,8 @@ class ActionModel:
 
 		self.model_action_o_action = layers.Dense(15,
 			kernel_initializer=model.initializer, 
-			activity_regularizer=MaxRegularizer(), use_bias=False, activation="tanh")(x)
+			activity_regularizer=MaxRegularizer(),
+			use_bias=True, bias_initializer=model.initializer, activation="tanh")(x)
 		
 		self.model_action = keras.Model(
 			inputs=self.model_action_i_state,
@@ -136,15 +145,19 @@ class ActionModel:
 
 
 class Model:
-	def __init__(self, episode_length, n_replay_episodes, n_training_epochs, replay_sample_length):
-		self.initializer = initializers.RandomNormal(stddev=0.01)
-		self.optimizer = keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999, clipnorm=0.1, clipvalue=1.0)
-		self.action_optimizer = keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
+	def __init__(self, episode_length, n_replay_episodes, n_training_epochs, replay_sample_length,
+		output_visual_log=False):
+		self.initializer = initializers.RandomNormal(stddev=0.05)
+		self.beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.0)
+		self.gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.0)
+		self.optimizer = keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999,
+			clipnorm=0.1, clipvalue=1.0)
+		self.action_optimizer = self.optimizer#keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
 		self.loss_function = keras.losses.MeanSquaredError()
 		self.loss_image = loss_image
 		#self.loss_action = loss_action
 
-		self.state_size = 512
+		self.state_size = 256
 		self.image_enc_size = 256
 		self.tbptt_length_encoder = 8
 		self.tbptt_length_backbone = 64
@@ -156,6 +169,7 @@ class Model:
 		self.n_replay_episodes = n_replay_episodes
 		self.n_training_epochs = n_training_epochs
 		self.replay_sample_length = replay_sample_length
+		self.output_visual_log = output_visual_log
 
 		self.create_image_encoder_model(feature_multiplier=2)
 		self.create_image_decoder_model(feature_multiplier=2)
@@ -167,6 +181,29 @@ class Model:
 		self.create_action_models()
 
 		self.define_training_functions()
+
+		self.image_flats = []
+		self.image_encs = []
+		self.image_enc_preds = []
+		self.states = []
+	
+	def save_episode_state_images(self, episode_id):
+		if len(self.image_encs) == 0:
+			return
+		
+		cv2.imwrite("out/image_flat_{}.png".format(episode_id),
+			(cv2.cvtColor(np.stack(self.image_flats, axis=1), cv2.COLOR_RGB2BGR)*65535).astype(np.uint16))
+		cv2.imwrite("out/image_enc_{}.png".format(episode_id),
+			(np.stack(self.image_encs, axis=-1)*65535).astype(np.uint16))
+		cv2.imwrite("out/image_enc_pred_{}.png".format(episode_id),
+			(np.stack(self.image_enc_preds, axis=-1)*65535).astype(np.uint16))
+		cv2.imwrite("out/state_{}.png".format(episode_id),
+			(np.stack(self.states, axis=-1)*65535).astype(np.uint16))
+
+		self.image_flats = []
+		self.image_encs = []
+		self.image_enc_preds = []
+		self.states = []
 
 
 	def define_training_functions(self):
@@ -181,18 +218,19 @@ class Model:
 		def train_image_encoder_model(images, actions, rewards, state_init, i):
 			with tf.GradientTape(persistent=True) as gt:
 				image_enc = self.model_image_encoder(images[i], training=True)
-				state = self.model_state([state_init, image_enc], training=True)
+				state = self.model_state([state_init, image_enc, actions[i-1]], training=True)
 				reward = self.model_reward([state, actions[i]], training=True)
 				states = [state]
 
 				loss_reward = self.loss_function(rewards[i], reward)
 				loss_forward = tf.zeros_like(loss_reward)
+				loss_reg = tf.reduce_mean(self.model_image_encoder.losses)
 
 				for j in range(1, self.tbptt_length_encoder):
 					image_enc_pred = self.model_forward([image_enc, state, actions[i+j-1]])
 
 					image_enc = self.model_image_encoder(images[i+j], training=True)
-					state = self.model_state([state, image_enc], training=True)
+					state = self.model_state([state, image_enc, actions[i+j-1]], training=True)
 					reward = self.model_reward([state, actions[i+j]], training=True)
 					states.append(state)
 					
@@ -200,20 +238,24 @@ class Model:
 					loss_reward += self.loss_function(rewards[i+j], reward)
 					# forward loss
 					loss_forward += tf.reduce_mean(tf.abs(image_enc - image_enc_pred))
+					# regularization loss
+					loss_reg += tf.reduce_mean(self.model_image_encoder.losses)
 
 				actions_pred = self.model_inverse(tf.expand_dims(tf.stack(states, axis=-1), axis=-1),
 					training=True)[:,:,:,0]
 				actions_true = tf.transpose(actions[i:i+self.tbptt_length_encoder-1], perm=[1, 2, 0])
 				
 				loss_inverse = loss_function_inverse(actions_true, actions_pred)
-				loss_inverse *= 10.0 # TODO TEMP multiplier
+				# loss_inverse *= 10.0 # TODO TEMP multiplier
 
 				loss_forward /= (self.tbptt_length_encoder-1)
 
 				loss_reward /= self.tbptt_length_encoder
-				loss_reward *= 0.1 # TODO TEMP multiplier
+				# loss_reward *= 0.1 # TODO TEMP multiplier
 
-				loss_total = loss_inverse + loss_forward + loss_reward
+				loss_reg /= self.tbptt_length_encoder
+
+				loss_total = loss_inverse + loss_reward + loss_forward + loss_reg
 
 			
 			g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
@@ -223,7 +265,7 @@ class Model:
 			g_model_reward = gt.gradient(loss_total, self.model_reward.trainable_variables)
 			
 			state = self.model_state([state_init, self.model_image_encoder(images[i],
-				training=False)], training=False)
+				training=False), actions[i-1]], training=False)
 			
 			return state, g_model_image_encoder, g_model_state, g_model_inverse, g_model_forward, g_model_reward,\
 				loss_total, loss_inverse, loss_forward, loss_reward
@@ -238,18 +280,19 @@ class Model:
 		])
 		def train_backbone_inverse(image_encs, actions, rewards, state_init, i):
 			with tf.GradientTape(persistent=True) as gt:
-				state= self.model_state([state_init, image_encs[i]], training=True)
+				state= self.model_state([state_init, image_encs[i], actions[i-1]], training=True)
 				reward = self.model_reward([state, actions[i]], training=True)
 				states = [state]
 
 				# loss_total = self.model_state.losses[0]
 				loss_reward = self.loss_function(rewards[i], reward)
 				loss_forward = tf.zeros_like(loss_reward)
+				loss_reg = tf.reduce_mean(self.model_state.losses)
 
 				for j in range(1, self.tbptt_length_backbone):
 					image_enc_pred = self.model_forward([image_encs[i+j-1], state, actions[i+j-1]])
 
-					state = self.model_state([state, image_encs[i+j]], training=True)
+					state = self.model_state([state, image_encs[i+j], actions[i+j-1]], training=True)
 					reward = self.model_reward([state, actions[i+j]], training=True)
 					states.append(state)
 					
@@ -257,20 +300,23 @@ class Model:
 					loss_reward += self.loss_function(rewards[i+j], reward)
 					# forward loss
 					loss_forward += tf.reduce_mean(tf.abs(image_encs[i+j] - image_enc_pred))
+					loss_reg += tf.reduce_mean(self.model_state.losses)
 
 				actions_pred = self.model_inverse_backbone(
 					tf.expand_dims(tf.stack(states, axis=-1), axis=-1), training=True)[:,:,:,0]
 				actions_true = tf.transpose(actions[i:i+self.tbptt_length_backbone-1], perm=[1, 2, 0])
 				
 				loss_inverse = loss_function_inverse(actions_true, actions_pred)
-				loss_inverse *= 10.0 # TODO TEMP multiplier
+				# loss_inverse *= 10.0 # TODO TEMP multiplier
 
 				loss_forward /= (self.tbptt_length_backbone-1)
 
 				loss_reward /= self.tbptt_length_backbone
-				loss_reward *= 0.1 # TODO TEMP multiplier
+				# loss_reward *= 0.1 # TODO TEMP multiplier
 
-				loss_total = loss_inverse + loss_forward + loss_reward
+				loss_reg /= self.tbptt_length_backbone
+
+				loss_total = loss_inverse + loss_reward + loss_forward + loss_reg
 			
 			g_model_state = gt.gradient(loss_total, self.model_state.trainable_variables)
 			g_model_inverse_backbone = gt.gradient(loss_total,
@@ -356,14 +402,14 @@ class Model:
 		if n2 is not None:
 			x = layers.Dense(n2, kernel_initializer=self.initializer, use_bias=False)(x)
 			x = layers.BatchNormalization(axis=-1,
-				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
+				beta_initializer = self.beta_initializer,
+				gamma_initializer = self.gamma_initializer)(x)
 			x = activations.relu(x, alpha=alpha)
 
 		x = layers.Dense(n, kernel_initializer=self.initializer, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(x)
 		x = activations.relu(x, alpha=alpha)
 
 		if use_shortcut:
@@ -373,8 +419,30 @@ class Model:
 			x = act(x)
 		
 		return x
-		
 	
+
+	def module_dense2(self, x, n, alpha=0.001):
+		use_shortcut = n == x.shape[1]
+
+		if use_shortcut:
+			y = x
+
+		x = layers.Dense(n, use_bias=False,
+			kernel_initializer=initializers.Orthogonal())(x)
+		x = layers.BatchNormalization(axis=-1,
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(x)
+		x = activations.relu(x, alpha=alpha)
+
+		x = layers.Dense(n, use_bias=True,
+			kernel_initializer=initializers.Orthogonal())(x)
+		
+		if use_shortcut:
+			x = layers.Add()([x, y])
+
+		return x
+
+
 	def module_conv(self, x, n1, n2, k1=(3,3), k2=(3,3), s1=(2,2), s2=(1,1),
 		p1="same", p2="same", alpha=0.001):
 
@@ -397,21 +465,21 @@ class Model:
 			y = layers.Conv2D(n2, (skip_x_kernel, skip_y_kernel),
 				kernel_initializer=self.initializer, use_bias=False, padding="valid")(y)
 			y = layers.BatchNormalization(axis=-1,
-				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(y)
+				beta_initializer = self.beta_initializer,
+				gamma_initializer = self.gamma_initializer)(y)
 
 		x = layers.Conv2D(n1, k1, padding=p1, kernel_initializer=self.initializer,
 			strides=s1, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(x)
 		x = activations.relu(x, alpha=alpha)
 
 		x = layers.Conv2D(n2, k2, padding=p2, kernel_initializer=self.initializer,
 			strides=s2, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(x)
 		x = activations.relu(x, alpha=alpha)
 
 		return layers.Add()([x, y])
@@ -432,21 +500,21 @@ class Model:
 		y = layers.UpSampling2D((pool_x_size, pool_y_size), interpolation="bilinear")(x)
 		y = layers.Conv2D(n2, (1, 1), kernel_initializer=self.initializer, use_bias=False)(y)
 		y = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(y)
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(y)
 
 		x = layers.Conv2DTranspose(n1, k1, padding=p1, kernel_initializer=self.initializer,
 			strides=s1, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(x)
 		x = activations.relu(x, alpha=alpha)
 
 		x = layers.Conv2DTranspose(n2, k2, padding=p2, kernel_initializer=self.initializer,
 			strides=s2, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(x)
 		x = activations.relu(x, alpha=alpha)
 
 		x = layers.Add()([x, y])
@@ -465,21 +533,44 @@ class Model:
 			y = layers.Conv2D(n_total, (1, 1),
 				kernel_initializer=self.initializer, use_bias=False)(y)
 			y = layers.BatchNormalization(axis=-1,
-				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(y)
+				beta_initializer = self.beta_initializer,
+				gamma_initializer = self.gamma_initializer)(y)
 
 		xv = []
 		for i in range(len(n)):
 			xv.append(layers.Conv2D(n[i], k[i], padding="same",
 				kernel_initializer=self.initializer, use_bias=False)(x))
 			xv[-1] = layers.BatchNormalization(axis=-1,
-				beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-				gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(xv[-1])
+				beta_initializer = self.beta_initializer,
+				gamma_initializer = self.gamma_initializer)(xv[-1])
 			xv[-1] = activations.relu(xv[-1], alpha=alpha)
 
 		x = layers.concatenate(xv)
 
 		return layers.Add()([x, y])
+
+	
+	def module_fusion(self, x1, x2, n, activation="tanh", alpha=0.001):
+		# gates
+		g1 = layers.Concatenate()([x1, x2])
+		g1 = layers.Dense(n,
+			kernel_initializer=initializers.Orthogonal(1.0),
+			use_bias=True, activation="sigmoid")(g1)
+		g2 = layers.Lambda(lambda x: 1.0 - x)(g1)
+
+		# adapter dense layers
+		x1 = layers.Dense(n, kernel_initializer=self.initializer, use_bias=True)(x1)
+		if activation == "tanh":
+			x1 = layers.Activation(activations.tanh)(x1)
+		elif activation == "relu":
+			x1 = activations.relu(x1, alpha=alpha)
+		x2 = layers.Dense(n, kernel_initializer=self.initializer, use_bias=True)(x2)
+		if activation == "tanh":
+			x2 = layers.Activation(activations.tanh)(x2)
+		elif activation == "relu":
+			x2 = activations.relu(x2, alpha=alpha)
+
+		return layers.Add()([layers.Multiply()([x1, g1]), layers.Multiply()([x2, g2])])
 	
 
 	def create_image_encoder_model(self, feature_multiplier=1):
@@ -493,7 +584,7 @@ class Model:
 		x = self.module_conv(x, 32*feature_multiplier, 32*feature_multiplier) #20x20
 		x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier) #10x10
 		x = self.module_conv(x, 128*feature_multiplier, 128*feature_multiplier, k2=(1,1)) #5x5
-		x = self.module_conv(x, 128*feature_multiplier, 128*feature_multiplier,
+		x = self.module_conv(x, 256*feature_multiplier, 256*feature_multiplier,
 			s1=(1,1), p1="valid", p2="valid") #1x1
 		x = layers.Flatten()(x)
 
@@ -509,10 +600,20 @@ class Model:
 			s1=(1,1), p1="valid", p2="valid") #1x1
 		y = layers.Flatten()(y)
 
-		self.model_image_encoder_o_image_enc = self.module_dense(
-			x, self.image_enc_size,
-			x2=y, n2=self.image_enc_size,
-			act=layers.Activation(activations.tanh, activity_regularizer=L2Regularizer(1.0e-2)))
+		g1 = layers.Concatenate()([x, y])
+		g1 = layers.Dense(self.image_enc_size, kernel_initializer=initializers.Orthogonal(10.0),
+			use_bias=True, activation="sigmoid")(g1)
+		g2 = layers.Lambda(lambda x: 1.0 - x)(g1)
+
+		x = layers.Dense(
+			self.image_enc_size, kernel_initializer=self.initializer,
+			use_bias=True, activation="tanh", activity_regularizer=L8Regularizer(10.0))(x)
+		y = layers.Dense(
+			self.image_enc_size, kernel_initializer=self.initializer,
+			use_bias=True, activation="tanh", activity_regularizer=L8Regularizer(10.0))(y)
+		
+		self.model_image_encoder_o_image_enc = layers.Add()([
+			layers.Multiply()([x, g1]), layers.Multiply()([y, g2]) ])
 
 		self.model_image_encoder = keras.Model(
 			inputs=self.model_image_encoder_i_image,
@@ -546,39 +647,64 @@ class Model:
 	def create_state_model(self):
 		self.model_state_i_state = keras.Input(shape=(self.state_size))
 		self.model_state_i_image_enc = keras.Input(shape=(self.image_enc_size))
-		
-		# concatenate image encoding and layer 
-		#x = layers.concatenate([self.model_state_i_state, self.model_state_i_image_enc])
+		self.model_state_i_action = keras.Input(shape=(15))
 
-		# first layer uses concatenative dense module
-		x = self.module_dense(self.model_state_i_state, self.state_size,
-			x2=self.model_state_i_image_enc, n2=self.state_size+self.image_enc_size)
-		#x = self.module_dense(x, self.state_size)
+		# reset gate
+		r_i = self.module_dense2(self.model_state_i_image_enc, self.state_size)
+		r_s = self.module_dense2(self.model_state_i_state, self.state_size)
+		r = layers.Add()([r_i, r_s])
+		r = layers.Dense(self.state_size, use_bias=True,
+			bias_initializer=initializers.RandomUniform(-0.5, 1.5),
+			kernel_initializer=initializers.Orthogonal(),
+			activation="sigmoid")(r)
 
-		# state output
-		s = self.module_dense(x, self.state_size)
-		s = layers.Dense(self.state_size, kernel_initializer=self.initializer,
-			use_bias=False, activation="tanh", activity_regularizer=L2Regularizer(5.0e-2))(s)
-		
-		# gate output value for previous state feedthrough
-		#g1 = self.module_dense(x, self.state_size)
-		g1 = layers.Dense(self.state_size, kernel_initializer=self.initializer,
-			use_bias=False, activation="sigmoid")(x)#(g1)
+		# update gate
+		u_i = self.module_dense2(self.model_state_i_image_enc, self.state_size)
+		u_s = self.module_dense2(self.model_state_i_state, self.state_size)
+		u1 = layers.Add()([u_i, u_s])
+		u1 = layers.Dense(self.state_size, use_bias=True,
+			bias_initializer=initializers.RandomUniform(-1.0, 4.0),
+			kernel_initializer=initializers.Orthogonal(),
+			activation="sigmoid")(u1)
+		u2 = layers.Lambda(lambda x: 1.0 - x)(u1)
 
-		# gate output value for new state (1 - g1)
-		g2 = layers.Lambda(lambda x: 1.0 - x)(g1)
+		# image encoding / action fusion
+		i_i = layers.Dense(self.state_size, kernel_initializer=initializers.Orthogonal(),
+			use_bias=True)(self.model_state_i_image_enc)
+		i_i = layers.BatchNormalization(axis=-1,
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(i_i)
+		i_i = activations.relu(i_i, alpha=0.001)
+		i_a = layers.Dense(self.state_size, kernel_initializer=initializers.Orthogonal(),
+			use_bias=True)(self.model_state_i_action)
+		i_a = layers.BatchNormalization(axis=-1,
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(i_a)
+		i_a = activations.relu(i_a, alpha=0.001)
+		i_g1 = layers.concatenate([self.model_state_i_image_enc, self.model_state_i_action])
+		i_g1 = layers.Dense(self.state_size, kernel_initializer=initializers.Orthogonal(),
+			use_bias=True, activation="sigmoid")(i_g1)
+		i_g2 = layers.Lambda(lambda x: 1.0 - x)(i_g1)
+		i_f = layers.Add()([layers.Multiply()([i_i, i_g1]), layers.Multiply()([i_a, i_g2])])
 
-		# gated new state
-		self.model_state_o_state = layers.Add()([\
-			layers.Multiply()([self.model_state_i_state, g1]),
-			layers.Multiply()([s, g2])
-		]) # new state mixed from old and new according to the gate values
+		# candidate state
+		s = layers.Add()([layers.Multiply()([self.model_state_i_state, r]), i_f])
+		s = self.module_dense(s, self.state_size, n2=self.state_size)
+		s = layers.Dense(self.state_size, use_bias=True,
+			kernel_initializer=initializers.Orthogonal(),
+			activation="tanh",
+			activity_regularizer=L8Regularizer(10.0))(s)
+
+		# output state
+		self.model_state_o_state = layers.Add()([
+			layers.Multiply()([self.model_state_i_state, u1]), layers.Multiply()([s, u2]) ])
 
 		self.model_state = keras.Model(
-			inputs=[self.model_state_i_state, self.model_state_i_image_enc],
+			inputs=[self.model_state_i_state, self.model_state_i_image_enc,
+				self.model_state_i_action],
 			outputs=self.model_state_o_state,
 			name="model_state")
-		#self.model_state.summary()
+		# self.model_state.summary()
 
 
 	def create_reward_model(self):
@@ -591,7 +717,8 @@ class Model:
 		x = self.module_dense(x, self.state_size, n2=self.state_size)
 
 		self.model_reward_o_reward_step = layers.Dense(1,
-			kernel_initializer=self.initializer, use_bias=False)(x)
+			kernel_initializer=self.initializer,
+			use_bias=True, bias_initializer=self.initializer)(x)
 
 		self.model_reward = keras.Model(
 			inputs=[self.model_reward_i_state, self.model_reward_i_action],
@@ -606,16 +733,14 @@ class Model:
 		self.model_forward_i_state = keras.Input(shape=(self.state_size))
 		self.model_forward_i_action = keras.Input(shape=(15))
 
-		y = layers.concatenate([self.model_forward_i_state, self.model_forward_i_action])
-
-		x = self.module_dense(
-			self.model_forward_i_image_enc, self.image_enc_size,
-			x2=y, n2=self.state_size+self.image_enc_size)
+		x = self.module_fusion(self.model_forward_i_image_enc, self.model_forward_i_action,
+			self.image_enc_size, activation="relu")
 		x = self.module_dense(x, self.image_enc_size, n2=self.image_enc_size)
-		x = self.module_dense(x, self.image_enc_size, n2=self.image_enc_size)
+		y = self.module_fusion(self.model_forward_i_state, self.model_forward_i_action,
+			self.image_enc_size, activation="relu")
+		y = self.module_dense(y, self.image_enc_size, n2=self.image_enc_size)
 
-		self.model_forward_o_image_enc = layers.Dense(self.image_enc_size,
-			kernel_initializer=self.initializer, activation="tanh")(x)
+		self.model_forward_o_image_enc = self.module_fusion(x, y, self.image_enc_size)
 
 		self.model_forward = keras.Model(
 			inputs=[self.model_forward_i_image_enc,
@@ -631,55 +756,27 @@ class Model:
 		s8 = int(self.state_size/8)
 		alpha = 0.001
 
-		comp_dense1 = layers.Dense(256, kernel_initializer=self.initializer, use_bias=False)
-		comp_bn1 = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))
+		comp_dense1 = layers.Dense(self.state_size,
+			kernel_initializer=initializers.Orthogonal(), use_bias=False)
+		comp_bn_dense1 = layers.BatchNormalization(axis=-1,
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)
 		
-		comp_dense2 = layers.Dense(15, kernel_initializer=self.initializer, use_bias=False)
-		comp_bn2 = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))
+		comp_dense2 = layers.Dense(15,
+			kernel_initializer=initializers.Orthogonal(), use_bias=True)
 
 
 		self.model_inverse_i_states = keras.Input(shape=(self.state_size, l_e, 1))
 
 		# process all states with the shared layers into a single block
 		compressed = []
-		for i in range(l_e):
-			x = layers.Flatten()(self.model_inverse_i_states[:, :, i, :])
-			x = comp_dense1(x)
-			x = comp_bn1(x)
+		for i in range(l_e-1):
+			x = layers.Flatten()(self.model_inverse_i_states[:, :, i:i+2, :])
+			x = comp_bn_dense1(comp_dense1(x))
 			x = activations.relu(x, alpha=alpha)
 			x = comp_dense2(x)
-			x = comp_bn2(x)
-			compressed.append(activations.relu(x, alpha=alpha))
+			compressed.append(x)
 		x = tf.expand_dims(tf.stack(compressed, axis=2), axis=-1)
-
-		# skip connection with simple convolution
-		y = layers.Conv2D(1, (1, 2), kernel_initializer=self.initializer, use_bias=False)(x)
-		y = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(y)
-		y = layers.Flatten()(y)
-
-		# residual block dense layers
-		x = layers.Flatten()(x)
-
-		x = layers.Dense((l_e-1)*15, kernel_initializer=self.initializer, use_bias=False)(x)
-		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
-		x = activations.relu(x, alpha=alpha)
-
-		x = layers.Dense((l_e-1)*15, kernel_initializer=self.initializer, use_bias=False)(x)
-		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
-		x = activations.relu(x, alpha=alpha)
-
-		x = layers.Add()([x, y])
-		x = layers.Reshape((15, l_e-1, 1))(x)
 
 		self.model_inverse_o_actions = layers.Activation(activations.tanh)(x)
 
@@ -695,40 +792,13 @@ class Model:
 		self.model_inverse_backbone_i_states = keras.Input(shape=(self.state_size, l_e, 1))
 
 		compressed = []
-		for i in range(l_e):
-			x = layers.Flatten()(self.model_inverse_backbone_i_states[:, :, i, :])
-			x = comp_dense1(x)
-			x = comp_bn1(x)
+		for i in range(l_e-1):
+			x = layers.Flatten()(self.model_inverse_backbone_i_states[:, :, i:i+2, :])
+			x = comp_bn_dense1(comp_dense1(x))
 			x = activations.relu(x, alpha=alpha)
 			x = comp_dense2(x)
-			x = comp_bn2(x)
-			compressed.append(activations.relu(x, alpha=alpha))
+			compressed.append(x)
 		x = tf.expand_dims(tf.stack(compressed, axis=2), axis=-1)
-
-		# skip connection with simple convolution
-		y = layers.Conv2D(1, (1, 2), kernel_initializer=self.initializer, use_bias=False)(x)
-		y = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(y)
-		y = layers.Flatten()(y)
-
-		# residual block dense layers
-		x = layers.Flatten()(x)
-
-		x = layers.Dense((l_e-1)*15, kernel_initializer=self.initializer, use_bias=False)(x)
-		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
-		x = activations.relu(x, alpha=alpha)
-
-		x = layers.Dense((l_e-1)*15, kernel_initializer=self.initializer, use_bias=False)(x)
-		x = layers.BatchNormalization(axis=-1,
-			beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-			gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.01))(x)
-		x = activations.relu(x, alpha=alpha)
-
-		x = layers.Add()([x, y])
-		x = layers.Reshape((15, l_e-1, 1))(x)
 		
 		self.model_inverse_backbone_o_actions = layers.Activation(activations.tanh)(x)
 
@@ -756,7 +826,14 @@ class Model:
 
 		# update image encoding and state
 		self.image_enc = self.model_image_encoder(tf.expand_dims(image, 0), training=False)
-		self.state = self.model_state([self.state, self.image_enc], training=False)
+		self.state = self.model_state([self.state, self.image_enc, action_prev], training=False)
+
+		# visual log output
+		if self.output_visual_log:
+			self.image_flats.append(tf.reduce_mean(image[:,:,0:3], axis=0).numpy())
+			self.image_encs.append((self.image_enc[0]*0.5 + 0.5).numpy())
+			self.image_enc_preds.append((image_enc_pred[0]*0.5 + 0.5).numpy())
+			self.states.append((self.state[0]*0.5 + 0.5).numpy())
 
 		# return curiosity reward - difference between predicted and real image encoding
 		return tf.reduce_mean(tf.abs(self.image_enc[0] - image_enc_pred[0]))
@@ -803,8 +880,6 @@ class Model:
 
 		for e in range(self.n_training_epochs):
 			# compute initial states
-			#memory.compute_states(self.model_state, self.model_image_encoder)
-			
 			images, actions, rewards, state_init = memory.get_sample(self.replay_sample_length,
 				self.model_state, self.model_image_encoder)
 
@@ -819,7 +894,7 @@ class Model:
 			g_model_inverse = None
 			g_model_forward = None
 			g_model_reward = None
-			for i in range(self.replay_sample_length-self.tbptt_length_encoder):
+			for i in range(1, self.replay_sample_length-self.tbptt_length_encoder):
 				state_prev,\
 					gi_model_image_encoder, gi_model_state, gi_model_inverse, gi_model_forward, gi_model_reward,\
 					loss_total_tf, loss_inverse_tf, loss_forward_tf, loss_reward_tf =\
@@ -833,7 +908,7 @@ class Model:
 
 				print("Epoch {:3d} - Training encoder model ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_f: {:8.5f} l_i: {:8.5f}".format(
 					e, i+self.tbptt_length_encoder+1, self.replay_sample_length,
-					loss_total/(i+1), loss_reward/(i+1), loss_forward/(i+1), loss_inverse/(i+1)),
+					loss_total/i, loss_reward/i, loss_forward/i, loss_inverse/i),
 					end="\r")
 				
 				if g_model_image_encoder is None:
@@ -864,9 +939,6 @@ class Model:
 			
 			self.optimizer.apply_gradients(zip(g_model_image_encoder,
 				self.model_image_encoder.trainable_variables))
-			self.optimizer.apply_gradients(zip(g_model_inverse,
-				self.model_inverse.trainable_variables))
-
 
 			for i in range(self.replay_sample_length):
 				image_encs[i].assign(self.model_image_encoder(images[i], training=False))
@@ -880,7 +952,7 @@ class Model:
 			loss_forward = 0.0
 			loss_reward = 0.0
 			g_model_inverse_backbone = None
-			for i in range(self.replay_sample_length-self.tbptt_length_backbone):
+			for i in range(1, self.replay_sample_length-self.tbptt_length_backbone):
 				state_prev,\
 					gi_model_state, gi_model_inverse_backbone, gi_model_forward, gi_model_reward,\
 					loss_total_tf, loss_inverse_tf, loss_forward_tf, loss_reward_tf =\
@@ -892,7 +964,7 @@ class Model:
 				loss_reward += loss_reward_tf.numpy()
 				print("Epoch {:3d} - Training the backbone ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_f: {:8.5f} l_i: {:8.5f}".format(
 					e, i+self.tbptt_length_backbone+1, self.replay_sample_length,
-					loss_total/(i+1), loss_reward/(i+1), loss_forward/(i+1), loss_inverse/(i+1)),
+					loss_total/i, loss_reward/i, loss_forward/i, loss_inverse/i),
 					end="\r")
 				
 				if g_model_state is None:
@@ -917,53 +989,53 @@ class Model:
 
 			print("")
 
-			# # train the forward model
-			# state_prev = state_init
-			# # loss_total = 0.0
-			# # loss_reward = 0.0
-			# loss_forward = 0.0
-			# discount_cum = 0.0 # discount_cum signifies successful prediction falloff volume - "confidence"
-			# for i in range(self.replay_sample_length-self.tbptt_length_backbone):
-			# 	state_prev, gi_model_forward, loss_forward_tf, discount_cum_tf =\
-			# 		self.train_backbone(image_encs, actions, rewards, state_prev,
-			# 		tf.convert_to_tensor(i))
-			# 	# loss_total += loss_total_tf.numpy()
-			# 	# loss_reward += loss_reward_tf.numpy()
-			# 	loss_forward += loss_forward_tf.numpy()
-			# 	discount_cum += discount_cum_tf.numpy()
-			# 	print("Epoch {:3d} - Training forward model ({}/{}) l_f: {:8.5f} d_c: {:8.5f}".format(
-			# 		e, i+self.tbptt_length_backbone+1, self.replay_sample_length,
-			# 		loss_forward/(i+1), discount_cum/(i+1)), end="\r")
+			# train the forward model
+			state_prev = state_init
+			# loss_total = 0.0
+			# loss_reward = 0.0
+			loss_forward = 0.0
+			discount_cum = 0.0 # discount_cum signifies successful prediction falloff volume - "confidence"
+			for i in range(self.replay_sample_length-self.tbptt_length_backbone):
+				state_prev, gi_model_forward, loss_forward_tf, discount_cum_tf =\
+					self.train_backbone(image_encs, actions, rewards, state_prev,
+					tf.convert_to_tensor(i))
+				# loss_total += loss_total_tf.numpy()
+				# loss_reward += loss_reward_tf.numpy()
+				loss_forward += loss_forward_tf.numpy()
+				discount_cum += discount_cum_tf.numpy()
+				print("Epoch {:3d} - Training forward model ({}/{}) l_f: {:8.5f} d_c: {:8.5f}".format(
+					e, i+self.tbptt_length_backbone+1, self.replay_sample_length,
+					loss_forward/(i+1), discount_cum/(i+1)), end="\r")
 
-			# 	if g_model_forward is None:
-			# 		g_model_forward = gi_model_forward
-			# 	else:
-			# 		g_model_forward = [a+b for a,b in zip(g_model_forward, gi_model_forward)]
-			# print("")
+				if g_model_forward is None:
+					g_model_forward = gi_model_forward
+				else:
+					g_model_forward = [a+b for a,b in zip(g_model_forward, gi_model_forward)]
+			print("")
 			
-			# # train the action (policy) models
-			# train_discount_factor = np.math.exp(-1.0/(discount_cum/(i+1))) # use prediction confidence as a basis for dc. factor
-			# for j in range(self.n_replay_episodes):
-			# 	state_prev = state_init
-			# 	loss_total = 0.0
-			# 	loss_reward = 0.0
-			# 	loss_reg = 0.0
-			# 	g_model_action = None
-			# 	for i in range(self.replay_sample_length):
-			# 		state_prev, gi_model_action, loss_total_tf, loss_reward_tf, loss_reg_tf =\
-			# 			self.models_action[j].train(image_encs, actions, rewards, state_prev,
-			# 			tf.convert_to_tensor(i), tf.convert_to_tensor(train_discount_factor))
-			# 		loss_total += loss_total_tf.numpy()
-			# 		loss_reward += loss_reward_tf.numpy()
-			# 		loss_reg += loss_reg_tf.numpy()
-			# 		print("Epoch {:3d} - Training action model {} ({}/{}) l_t: {:8.5f} l_rw: {:8.5f} l_rg: {:8.5f}".format(
-			# 			e, j, i+1, self.replay_sample_length,
-			# 			loss_total/(i+1), loss_reward/(i+1), loss_reg/(i+1)), end="\r")
+			# train the action (policy) models
+			train_discount_factor = np.math.exp(-1.0/(discount_cum/(i+1))) # use prediction confidence as a basis for dc. factor
+			for j in range(self.n_replay_episodes):
+				state_prev = state_init
+				loss_total = 0.0
+				loss_reward = 0.0
+				loss_reg = 0.0
+				g_model_action = None
+				for i in range(self.replay_sample_length):
+					state_prev, gi_model_action, loss_total_tf, loss_reward_tf, loss_reg_tf =\
+						self.models_action[j].train(image_encs, actions, rewards, state_prev,
+						tf.convert_to_tensor(i), tf.convert_to_tensor(train_discount_factor))
+					loss_total += loss_total_tf.numpy()
+					loss_reward += loss_reward_tf.numpy()
+					loss_reg += loss_reg_tf.numpy()
+					print("Epoch {:3d} - Training action model {} ({}/{}) l_t: {:8.5f} l_rw: {:8.5f} l_rg: {:8.5f}".format(
+						e, j, i+1, self.replay_sample_length,
+						loss_total/(i+1), loss_reward/(i+1), loss_reg/(i+1)), end="\r")
 					
-			# 		if g_model_action is None:
-			# 			g_model_action = gi_model_action
-			# 		else:
-			# 			g_model_action = [a+b for a,b in zip(g_model_action, gi_model_action)]
+					if g_model_action is None:
+						g_model_action = gi_model_action
+					else:
+						g_model_action = [a+b for a,b in zip(g_model_action, gi_model_action)]
 
 			# 	self.optimizer.apply_gradients(zip(g_model_action,
 			# 		self.models_action[j].model_action.trainable_variables))
@@ -971,6 +1043,8 @@ class Model:
 			
 			self.optimizer.apply_gradients(zip(g_model_state,
 				self.model_state.trainable_variables))
+			self.optimizer.apply_gradients(zip(g_model_inverse,
+				self.model_inverse.trainable_variables))
 			self.optimizer.apply_gradients(zip(g_model_inverse_backbone,
 				self.model_inverse_backbone.trainable_variables))
 			self.optimizer.apply_gradients(zip(g_model_reward,
