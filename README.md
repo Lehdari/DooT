@@ -12,8 +12,3 @@ mkdir wads/
 ```
 
 2. Put doom2.wad into `wads/`
-
-
-> hello lehdari
-
-> hieno repo
