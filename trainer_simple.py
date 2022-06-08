@@ -15,26 +15,27 @@ class TrainerSimple(TrainerInterface):
 
     def pick_action(self, game, model):
         # action = np.array([-1.0+2.0*random.random() for i in range(15)])
+        # action = np.concatenate([np.zeros((14,), dtype=np.float32), np.array([-1.0+2.0*random.random()])])
         # return action
 
         r = random.random()
         if r < self.epsilon:
             if random.random() < 0.05:
                 action = get_random_action(turn_delta_sigma=5.0,
-                    weapon_switch_prob=0.3-0.26*self.epsilon)
+                    weapon_switch_prob=0.03-0.026*self.epsilon)
             else:
-                action = mutate_action(self.action_prev, 2, turn_delta_sigma=4.0, turn_damping=0.9,
-                    weapon_switch_prob=0.3-0.26*self.epsilon)
-            action[14] = 0.9*self.action_prev[14] + 0.1*action[14]
+                action = mutate_action(self.action_prev, 2, turn_delta_sigma=5.0, turn_damping=0.9,
+                    weapon_switch_prob=0.03-0.026*self.epsilon)
+            action[14] = 0.95*self.action_prev[14] + 0.05*action[14]
         else:
             action = model.predict_action(self.memory.active_episode)
 
             if r < self.epsilon*2.0:
-                action = mutate_action(action, 2, turn_delta_sigma=2.0, turn_damping=0.9,
-                    weapon_switch_prob=0.2-0.17*self.epsilon)
+                action = mutate_action(action, 2, turn_delta_sigma=3.0, turn_damping=0.9,
+                    weapon_switch_prob=0.02-0.017*self.epsilon)
             elif r < self.epsilon*4.0:
-                action = mutate_action(action, 1, turn_delta_sigma=1.5, turn_damping=0.95,
-                    weapon_switch_prob=0.1-0.08*self.epsilon)
+                action = mutate_action(action, 1, turn_delta_sigma=2.0, turn_damping=0.95,
+                    weapon_switch_prob=0.01-0.008*self.epsilon)
 
         # Add some random walk to epsilon
         # self.epsilon += np.random.normal(scale=1.0/128)

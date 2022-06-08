@@ -48,8 +48,9 @@ def convert_action_to_continuous(action_mixed):
 
 def get_random_action(turn_delta_sigma=3.3, weapon_switch_prob=0.05):
     random_action = [-0.9+1.8*random.random() for i in range(7)]
-    random_action[5] = -0.9+1.35*random.random() # TEMP? weigh forward a bit more
-    random_action[6] = -0.45+1.35*random.random() # TEMP?
+    random_action[2] = -0.35+1.25*random.random() # TEMP? speed's good right?
+    random_action[5] = -0.9+1.15*random.random() # TEMP? weigh forward a bit more
+    random_action[6] = -0.25+1.15*random.random() # TEMP?
     random_action += [-0.9*random.random() for i in range(7)]
 
     if random.random() < weapon_switch_prob:

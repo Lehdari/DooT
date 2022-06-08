@@ -12,16 +12,16 @@ oblige_config_easy = {
     "teleporters": "none",
     "steepness": "mixed",
 
-    "mons": "some",
+    "mons": "nuts",
     "strength": "easier",
-    "ramp_up": "slow",
+    "ramp_up": "medium",
     "bosses": "none",
     "traps": "none",
     "cages": "none",
 
     "health": "heaps",
     "ammo": "heaps",
-    "weapons": "very_soon",
+    "weapons": "sooner",
     "items": "more",
     "secrets": "mixed",
 
@@ -62,6 +62,7 @@ oblige_config_easy = {
 
 
 def generate_maps(filename="wads/temp/oblige.wad", seed=1507715517):
+    # return
     generator = oblige.DoomLevelGenerator()
     generator.set_seed(seed)
     generator.set_config(oblige_config_easy)

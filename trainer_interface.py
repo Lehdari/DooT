@@ -77,6 +77,16 @@ class TrainerInterface:
 
 			# setup automap scale
 			game.send_game_command('am_scale 0.5')
+			
+			# give all weapons and armor
+			game.send_game_command("give health")
+			game.send_game_command("give weapons")
+			game.send_game_command("give backpack")
+			game.send_game_command("give ammo")
+			game.send_game_command("give armor")
+
+			# spell of undying
+			game.send_game_command("buddha")
 
 			self.episode_reset(model)
 			self.reward.player_start_pos = get_player_pos(game)
@@ -106,8 +116,8 @@ class TrainerInterface:
 			device="/gpu:0"
 		with tf.device(device):
 			# advance the model state using the screen buffer
-			reward_model = model.advance(screen_buf, self.action_prev).numpy()
-			# reward_model = 0.0
+			# reward_model = model.advance(screen_buf, self.action_prev).numpy()
+			reward_model = 0.0
 			
 			# pick an action to perform
 			action = self.pick_action(game, model)
