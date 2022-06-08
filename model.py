@@ -387,37 +387,21 @@ class Model:
 		
 		@tf.function(input_signature=[
 			tf.TensorSpec(shape=(self.replay_sample_length, 8, 240, 320, 4), dtype=tf.float32),
-			tf.TensorSpec(shape=(self.replay_sample_length, 8, 15), dtype=tf.float32),
-			tf.TensorSpec(shape=(self.replay_sample_length, 8), dtype=tf.float32),
-			tf.TensorSpec(shape=(8, self.state_size), dtype=tf.float32),
 			tf.TensorSpec(shape=(), dtype=tf.int32)
 		])
-		def train_autoencoder(images, actions, rewards, state_init, i):
+		def train_autoencoder(images, i):
 			with tf.GradientTape(persistent=True) as gt:
-				image_enc1 = self.model_image_encoder(images[i], training=True)
-				state1 = self.model_state([state_init, image_enc1], training=True)
-				image_enc_decode2 = self.model_forward([state1, actions[i]], training=True)
-				image_pred2, image_flow2, image_mask2, image_fill2 =\
-					self.model_image_decoder([image_enc_decode2, images[i]], training=True)
+				image_enc = self.model_image_encoder(images[i], training=True)
+				image_pred = self.model_image_decoder(image_enc, training=True)
 				
-				loss_decode = loss_image(images[i+1][:,:,:,0:3], image_pred2)
+				loss_decode = loss_image(images[i][:,:,:,0:3], image_pred)
 
 				loss_total = loss_decode
 
-				# loss_forward = tf.reduce_mean(tf.square(image_enc_pred2 - image_enc2))
-				# loss_total = 0.01*loss_forward + loss_decode# + loss_reg
-
 			g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
-			g_model_state = gt.gradient(loss_total, self.model_state.trainable_variables)
-			g_model_forward = gt.gradient(loss_total, self.model_forward.trainable_variables)
 			g_model_image_decoder = gt.gradient(loss_total, self.model_image_decoder.trainable_variables)
-
-			state = self.model_state([state_init,
-				self.model_image_encoder(images[i], training=False)], training=False)
 			
-			return state, image_pred2, image_flow2, image_mask2, image_fill2,\
-				g_model_image_encoder, g_model_state, g_model_forward, g_model_image_decoder,\
-				loss_total, loss_decode
+			return image_pred, g_model_image_encoder, g_model_image_decoder, loss_total
 
 		self.train_image_encoder_model = train_image_encoder_model
 		self.train_backbone_inverse = train_backbone_inverse
@@ -671,7 +655,6 @@ class Model:
 
 	def create_image_decoder_model(self, feature_multiplier=1):
 		self.model_image_decoder_i_image_enc = keras.Input(shape=(self.image_enc_size))
-		self.model_image_decoder_i_image_prev = keras.Input(shape=(240, 320, 4))
 
 		x = layers.Reshape((1, 1, -1))(self.model_image_decoder_i_image_enc)
 
@@ -684,31 +667,13 @@ class Model:
 		x = self.module_deconv(x, 16*feature_multiplier, 8*feature_multiplier) #160x120
 		x = self.module_deconv(x, 8*feature_multiplier, 4*feature_multiplier) #320x240
 		
-		x = layers.Conv2D(
-			6, (1, 1), kernel_initializer=initializers.Orthogonal(0.01),
-			padding="same", activation="linear")(x)
-		
-		w = tf.keras.layers.Lambda(
-			lambda a: tfa.image.dense_image_warp(a[0], a[1]))(
-				(self.model_image_decoder_i_image_prev[:,:,:,0:3], x[:,:,:,0:2]))
-		
-		m1 = layers.Activation(activations.sigmoid)(x[:,:,:,2:3])
-		m2 = layers.Lambda(lambda x: 1.0 - x)(m1)
-		i = layers.Activation(activations.sigmoid)(x[:,:,:,3:6])
-		self.model_image_decoder_o_image = layers.Add()(
-			[layers.Multiply()([i, m1]), layers.Multiply()([w, m2])])
-
-		self.model_image_decoder_o_flow = x[:,:,:,0:2]
-		self.model_image_decoder_o_mask = m1
-		self.model_image_decoder_o_fill = i
+		self.model_image_decoder_o_image = layers.Conv2D(
+			3, (1, 1), kernel_initializer=initializers.Orthogonal(0.01),
+			padding="same", activation="sigmoid")(x)
 
 		self.model_image_decoder = keras.Model(
-			inputs=[self.model_image_decoder_i_image_enc,
-				self.model_image_decoder_i_image_prev],
-			outputs=[self.model_image_decoder_o_image,
-				self.model_image_decoder_o_flow,
-				self.model_image_decoder_o_mask,
-				self.model_image_decoder_o_fill],
+			inputs=[self.model_image_decoder_i_image_enc],
+			outputs=[self.model_image_decoder_o_image],
 			name="model_image_decoder")
 		# self.model_image_decoder.summary()
 
@@ -937,24 +902,16 @@ class Model:
 
 			state_prev = state_init
 			loss_total = 0.0
-			loss_decode = 0.0
 			g_model_image_encoder = None
-			g_model_state = None
-			g_model_forward = None
 			g_model_image_decoder = None
-			for i in range(1, self.replay_sample_length-2):
-				state_prev, image_pred, image_flow, image_mask, image_fill,\
-					gi_model_image_encoder, gi_model_state, gi_model_forward, gi_model_image_decoder,\
-					loss_total_tf, loss_decode_tf =\
-					self.train_autoencoder(images, actions, rewards,
-						state_prev, tf.convert_to_tensor(i))
+			for i in range(self.replay_sample_length):
+				image_pred, gi_model_image_encoder, gi_model_image_decoder, loss_total_tf=\
+					self.train_autoencoder(images, tf.convert_to_tensor(i))
 				
 				loss_total += loss_total_tf.numpy()
-				loss_decode += loss_decode_tf.numpy()
 
-				print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_d: {:8.5f}".format(
-					e, i+3, self.replay_sample_length,
-					loss_total/i, loss_decode/i),
+				print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f}".format(
+					e, i, self.replay_sample_length, loss_total/i),
 					end="\r")
 				
 				if g_model_image_encoder is None:
@@ -962,206 +919,20 @@ class Model:
 				else:
 					g_model_image_encoder = [a+b for a,b in zip(g_model_image_encoder, gi_model_image_encoder)]
 
-				if g_model_state is None:
-					g_model_state = gi_model_state
-				else:
-					g_model_state = [a+b for a,b in zip(g_model_state, gi_model_state)]
-
-				if g_model_forward is None:
-					g_model_forward = gi_model_forward
-				else:
-					g_model_forward = [a+b for a,b in zip(g_model_forward, gi_model_forward)]
-
 				if g_model_image_decoder is None:
 					g_model_image_decoder = gi_model_image_decoder
 				else:
 					g_model_image_decoder = [a+b for a,b in zip(g_model_image_decoder, gi_model_image_decoder)]
 
-				show_frame_comparison(images[i+1][e%self.n_replay_episodes,:,:,0:3],
-					image_pred[e%self.n_replay_episodes],
-					image_flow[e%self.n_replay_episodes],
-					image_mask[e%self.n_replay_episodes],
-					image_fill[e%self.n_replay_episodes])
+				show_frame_comparison(images[i][e%self.n_replay_episodes,:,:,0:3],
+					image_pred[e%self.n_replay_episodes])
 			print("")
 
 			self.optimizer.apply_gradients(zip(g_model_image_encoder,
 				self.model_image_encoder.trainable_variables))
-			self.optimizer.apply_gradients(zip(g_model_state,
-				self.model_state.trainable_variables))
-			self.optimizer.apply_gradients(zip(g_model_forward,
-				self.model_forward.trainable_variables))
 			self.optimizer.apply_gradients(zip(g_model_image_decoder,
 				self.model_image_decoder.trainable_variables))
 
-			# # train the image encodet model (and reward model, 1st phase)
-			# state_prev = state_init
-			# loss_total = 0.0
-			# loss_inverse = 0.0
-			# loss_forward = 0.0
-			# loss_reward = 0.0
-			# g_model_image_encoder = None
-			# g_model_state = None
-			# g_model_inverse = None
-			# g_model_forward = None
-			# g_model_reward = None
-			# for i in range(1, self.replay_sample_length-self.tbptt_length_encoder):
-			# 	state_prev,\
-			# 		gi_model_image_encoder, gi_model_state, gi_model_inverse, gi_model_forward, gi_model_reward,\
-			# 		loss_total_tf, loss_inverse_tf, loss_forward_tf, loss_reward_tf =\
-			# 		self.train_image_encoder_model(images, actions, rewards,
-			# 		state_prev, tf.convert_to_tensor(i))
-				
-			# 	loss_total += loss_total_tf.numpy()
-			# 	loss_inverse += loss_inverse_tf.numpy()
-			# 	loss_forward += loss_forward_tf.numpy()
-			# 	loss_reward += loss_reward_tf.numpy()
-
-			# 	print("Epoch {:3d} - Training encoder model ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_f: {:8.5f} l_i: {:8.5f}".format(
-			# 		e, i+self.tbptt_length_encoder+1, self.replay_sample_length,
-			# 		loss_total/i, loss_reward/i, loss_forward/i, loss_inverse/i),
-			# 		end="\r")
-				
-			# 	if g_model_image_encoder is None:
-			# 		g_model_image_encoder = gi_model_image_encoder
-			# 	else:
-			# 		g_model_image_encoder = [a+b for a,b in zip(g_model_image_encoder, gi_model_image_encoder)]
-
-			# 	if g_model_state is None:
-			# 		g_model_state = gi_model_state
-			# 	else:
-			# 		g_model_state = [a+b for a,b in zip(g_model_state, gi_model_state)]
-
-			# 	if g_model_inverse is None:
-			# 		g_model_inverse = gi_model_inverse
-			# 	else:
-			# 		g_model_inverse = [a+b for a,b in zip(g_model_inverse, gi_model_inverse)]
-				
-			# 	if g_model_forward is None:
-			# 		g_model_forward = gi_model_forward
-			# 	else:
-			# 		g_model_forward = [a+b for a,b in zip(g_model_forward, gi_model_forward)]
-
-			# 	if g_model_reward is None:
-			# 		g_model_reward = gi_model_reward
-			# 	else:
-			# 		g_model_reward = [a+b for a,b in zip(g_model_reward, gi_model_reward)]
-			# print("")
-			
-			# self.optimizer.apply_gradients(zip(g_model_image_encoder,
-			# 	self.model_image_encoder.trainable_variables))
-
-			# for i in range(self.replay_sample_length):
-			# 	image_encs[i].assign(self.model_image_encoder(images[i], training=False))
-			# 	print("Computing image encodings... {} / {}      ".format(i+1,
-			# 	self.replay_sample_length), end="\r")
-			
-			# # train backbone with inverse model
-			# state_prev = state_init
-			# loss_total = 0.0
-			# loss_inverse = 0.0
-			# loss_forward = 0.0
-			# loss_reward = 0.0
-			# g_model_inverse_backbone = None
-			# for i in range(1, self.replay_sample_length-self.tbptt_length_backbone):
-			# 	state_prev,\
-			# 		gi_model_state, gi_model_inverse_backbone, gi_model_forward, gi_model_reward,\
-			# 		loss_total_tf, loss_inverse_tf, loss_forward_tf, loss_reward_tf =\
-			# 		self.train_backbone_inverse(image_encs, actions, rewards,
-			# 		state_prev, tf.convert_to_tensor(i))
-			# 	loss_total += loss_total_tf.numpy()
-			# 	loss_inverse += loss_inverse_tf.numpy()
-			# 	loss_forward += loss_forward_tf.numpy()
-			# 	loss_reward += loss_reward_tf.numpy()
-			# 	print("Epoch {:3d} - Training the backbone ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_f: {:8.5f} l_i: {:8.5f}".format(
-			# 		e, i+self.tbptt_length_backbone+1, self.replay_sample_length,
-			# 		loss_total/i, loss_reward/i, loss_forward/i, loss_inverse/i),
-			# 		end="\r")
-				
-			# 	if g_model_state is None:
-			# 		g_model_state = gi_model_state
-			# 	else:
-			# 		g_model_state = [a+b for a,b in zip(g_model_state, gi_model_state)]
-
-			# 	if g_model_inverse_backbone is None:
-			# 		g_model_inverse_backbone = gi_model_inverse_backbone
-			# 	else:
-			# 		g_model_inverse_backbone = [a+b for a,b in zip(g_model_inverse_backbone, gi_model_inverse_backbone)]
-
-			# 	if g_model_forward is None:
-			# 		g_model_forward = gi_model_forward
-			# 	else:
-			# 		g_model_forward = [a+b for a,b in zip(g_model_forward, gi_model_forward)]
-
-			# 	if g_model_reward is None:
-			# 		g_model_reward = gi_model_reward
-			# 	else:
-			# 		g_model_reward = [a+b for a,b in zip(g_model_reward, gi_model_reward)]
-
-			# print("")
-
-			# # train the forward model
-			# state_prev = state_init
-			# # loss_total = 0.0
-			# # loss_reward = 0.0
-			# loss_forward = 0.0
-			# discount_cum = 0.0 # discount_cum signifies successful prediction falloff volume - "confidence"
-			# for i in range(1, self.replay_sample_length-self.tbptt_length_backbone):
-			# 	state_prev, gi_model_forward, loss_forward_tf, discount_cum_tf =\
-			# 		self.train_backbone(image_encs, actions, rewards, state_prev,
-			# 		tf.convert_to_tensor(i))
-			# 	# loss_total += loss_total_tf.numpy()
-			# 	# loss_reward += loss_reward_tf.numpy()
-			# 	loss_forward += loss_forward_tf.numpy()
-			# 	discount_cum += discount_cum_tf.numpy()
-			# 	print("Epoch {:3d} - Training forward model ({}/{}) l_f: {:8.5f} d_c: {:8.5f}".format(
-			# 		e, i+self.tbptt_length_backbone+1, self.replay_sample_length,
-			# 		loss_forward/(i+1), discount_cum/(i+1)), end="\r")
-
-			# 	if g_model_forward is None:
-			# 		g_model_forward = gi_model_forward
-			# 	else:
-			# 		g_model_forward = [a+b for a,b in zip(g_model_forward, gi_model_forward)]
-			# print("")
-			
-			# # train the action (policy) models
-			# train_discount_factor = np.math.exp(-1.0/(discount_cum/(i+1))) # use prediction confidence as a basis for dc. factor
-			# for j in range(self.n_replay_episodes):
-			# 	state_prev = state_init
-			# 	loss_total = 0.0
-			# 	loss_reward = 0.0
-			# 	loss_reg = 0.0
-			# 	g_model_action = None
-			# 	for i in range(self.replay_sample_length):
-			# 		state_prev, gi_model_action, loss_total_tf, loss_reward_tf, loss_reg_tf =\
-			# 			self.models_action[j].train(image_encs, actions, rewards, state_prev,
-			# 			tf.convert_to_tensor(i), tf.convert_to_tensor(train_discount_factor))
-			# 		loss_total += loss_total_tf.numpy()
-			# 		loss_reward += loss_reward_tf.numpy()
-			# 		loss_reg += loss_reg_tf.numpy()
-			# 		print("Epoch {:3d} - Training action model {} ({}/{}) l_t: {:8.5f} l_rw: {:8.5f} l_rg: {:8.5f}".format(
-			# 			e, j, i+1, self.replay_sample_length,
-			# 			loss_total/(i+1), loss_reward/(i+1), loss_reg/(i+1)), end="\r")
-					
-			# 		if g_model_action is None:
-			# 			g_model_action = gi_model_action
-			# 		else:
-			# 			g_model_action = [a+b for a,b in zip(g_model_action, gi_model_action)]
-
-			# 	self.optimizer.apply_gradients(zip(g_model_action,
-			# 		self.models_action[j].model_action.trainable_variables))
-			# print("")
-			
-			# self.optimizer.apply_gradients(zip(g_model_state,
-			# 	self.model_state.trainable_variables))
-			# self.optimizer.apply_gradients(zip(g_model_inverse,
-			# 	self.model_inverse.trainable_variables))
-			# self.optimizer.apply_gradients(zip(g_model_inverse_backbone,
-			# 	self.model_inverse_backbone.trainable_variables))
-			# self.optimizer.apply_gradients(zip(g_model_reward,
-			# 	self.model_reward.trainable_variables))
-			# self.optimizer.apply_gradients(zip(g_model_forward,
-			# 	self.model_forward.trainable_variables))
-			
 			self.save_model("model", "model")
 
 			del images, actions, rewards, state_init

@@ -7,15 +7,10 @@ def print_frame_diff(images, actions, id):
     cv2.imshow("img_{}".format(id+1), cv2.cvtColor(images[id+1,0,:,:,0:3].numpy(), cv2.COLOR_RGB2BGR))
     cv2.waitKey(1)
 
-def show_frame_comparison(target, prediction, flow, mask, fill):
+def show_frame_comparison(target, prediction):
     f = np.zeros((240,320,3), dtype=np.float32)
     m = np.zeros((240,320,3), dtype=np.float32)
     g = np.zeros((240,320,3), dtype=np.float32)
-    f[:,:,:-1] = flow.numpy()
-    m[:,:,0:1] = mask.numpy()
-    m[:,:,1:2] = mask.numpy()
-    m[:,:,2:3] = mask.numpy()
-    g = fill.numpy()
 
     cv2.imshow("target / prediction", cv2.vconcat([cv2.hconcat([
         cv2.cvtColor(target.numpy(), cv2.COLOR_RGB2BGR),
