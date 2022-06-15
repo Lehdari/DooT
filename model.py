@@ -15,6 +15,7 @@ from tensorflow.compat.v1 import InteractiveSession
 import gc
 import os
 import cv2
+from tensorflow.python.framework.ops import disable_eager_execution
 
 
 config = ConfigProto()
@@ -44,6 +45,10 @@ class MaxRegularizer(regularizers.Regularizer):
 	def __call__(self, x):
 		return self.strength * self.batch_size * tf.reduce_max(tf.abs(x))
 
+def image_gradient(image):
+	x_grad = image[:,1:,:,:] - image[:,:-1,:,:]
+	y_grad = image[:,:,1:,:] - image[:,:,:-1,:]
+	return x_grad, y_grad
 
 def loss_image(y_true, y_pred):
 	return tf.reduce_mean(tf.abs(y_true - y_pred)) + 1.5*tf.reduce_mean(tf.square(y_true - y_pred))
@@ -161,7 +166,7 @@ class Model:
 		#self.loss_action = loss_action
 
 		self.state_size = 512
-		self.image_enc_size = 512
+		self.image_enc_size = 15*20*8
 		self.tbptt_length_encoder = 8
 		self.tbptt_length_backbone = 64
 		self.tbptt_length_action = 16
@@ -175,7 +180,7 @@ class Model:
 		self.output_visual_log = output_visual_log
 
 		self.create_image_encoder_model(feature_multiplier=2)
-		self.create_image_decoder_model(feature_multiplier=4)
+		self.create_image_decoder_model(feature_multiplier=2)
 
 		self.create_state_model()
 		self.create_reward_model()
@@ -386,22 +391,76 @@ class Model:
 			return state, g_model_forward, loss_forward, discount_cum
 		
 		@tf.function(input_signature=[
-			tf.TensorSpec(shape=(self.replay_sample_length, 8, 240, 320, 4), dtype=tf.float32),
+			tf.TensorSpec(shape=(self.replay_sample_length, 8, 240, 320, 5), dtype=tf.float32),
 			tf.TensorSpec(shape=(), dtype=tf.int32)
 		])
 		def train_autoencoder(images, i):
 			with tf.GradientTape(persistent=True) as gt:
-				image_enc = self.model_image_encoder(images[i], training=True)
-				image_pred = self.model_image_decoder(image_enc, training=True)
-				
-				loss_decode = loss_image(images[i][:,:,:,0:3], image_pred)
+				image_enc = self.model_image_encoder(images[i][:,:,:,0:4], training=True)
+				image_pred, depth_pred = self.model_image_decoder(image_enc, training=True)
 
-				loss_total = loss_decode
+				hud_attenuation = 0.05
+				hud_att_mask = tf.where(images[i][:,:,:,4:5] > 0.0,
+					tf.ones_like(images[i][:,:,:,4:5]),
+					tf.ones_like(images[i][:,:,:,4:5])*hud_attenuation)
+				
+				image_att = images[i][:,:,:,0:3]*hud_att_mask
+				image_pred_att = image_pred[:,:,:,0:3]*hud_att_mask
+				
+				loss_decode = loss_image(image_att, image_pred_att)
+
+				grad_x_image, grad_y_image = image_gradient(images[i][:,:,:,0:3])
+				grad_x_image_pred, grad_y_image_pred = image_gradient(image_pred[:,:,:,0:3])
+				loss_decode_gradient =\
+					loss_image(grad_x_image, grad_x_image_pred) +\
+					loss_image(grad_y_image, grad_y_image_pred)
+				
+				images2 = layers.AveragePooling2D((2,2))(images[i][:,:,:,0:3])
+				images_pred2 = layers.AveragePooling2D((2,2))(image_pred[:,:,:,0:3])
+				grad_x_image2, grad_y_image2 = image_gradient(images2)
+				grad_x_image_pred2, grad_y_image_pred2 = image_gradient(images_pred2)
+				loss_decode_gradient2 =\
+					loss_image(grad_x_image2, grad_x_image_pred2) +\
+					loss_image(grad_y_image2, grad_y_image_pred2)
+				
+				images4 = layers.AveragePooling2D((2,2))(images2)
+				images_pred4 = layers.AveragePooling2D((2,2))(images_pred2)
+				grad_x_image4, grad_y_image4 = image_gradient(images4)
+				grad_x_image_pred4, grad_y_image_pred4 = image_gradient(images_pred4)
+				loss_decode_gradient4 =\
+					loss_image(grad_x_image4, grad_x_image_pred4) +\
+					loss_image(grad_y_image4, grad_y_image_pred4)
+				
+				images8 = layers.AveragePooling2D((2,2))(images4)
+				images_pred8 = layers.AveragePooling2D((2,2))(images_pred4)
+				grad_x_image8, grad_y_image8 = image_gradient(images8)
+				grad_x_image_pred8, grad_y_image_pred8 = image_gradient(images_pred8)
+				loss_decode_gradient8 =\
+					loss_image(grad_x_image8, grad_x_image_pred8) +\
+					loss_image(grad_y_image8, grad_y_image_pred8)
+				
+				images16 = layers.AveragePooling2D((2,2))(images8)
+				images_pred16 = layers.AveragePooling2D((2,2))(images_pred8)
+				grad_x_image16, grad_y_image16 = image_gradient(images16)
+				grad_x_image_pred16, grad_y_image_pred16 = image_gradient(images_pred16)
+				loss_decode_gradient16 =\
+					loss_image(grad_x_image16, grad_x_image_pred16) +\
+					loss_image(grad_y_image16, grad_y_image_pred16)
+				
+				loss_depth = loss_image(images[i][:,:,:,4:5], depth_pred)
+
+				loss_total = loss_decode + loss_decode_gradient +\
+					loss_decode_gradient2 + loss_decode_gradient4 +\
+					loss_decode_gradient8 + loss_decode_gradient16 +\
+					loss_depth
 
 			g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
 			g_model_image_decoder = gt.gradient(loss_total, self.model_image_decoder.trainable_variables)
 			
-			return image_pred, g_model_image_encoder, g_model_image_decoder, loss_total
+			return image_pred, depth_pred, g_model_image_encoder, g_model_image_decoder,\
+				loss_total, loss_decode,\
+				loss_decode_gradient, loss_decode_gradient2, loss_decode_gradient4,\
+				loss_decode_gradient8, loss_decode_gradient16
 
 		self.train_image_encoder_model = train_image_encoder_model
 		self.train_backbone_inverse = train_backbone_inverse
@@ -465,7 +524,7 @@ class Model:
 
 
 	def module_conv(self, x, n1, n2, k1=(3,3), k2=(3,3), s1=(2,2), s2=(1,1),
-		p1="same", p2="same", alpha=0.001):
+		p1="same", p2="same", activation="relu", alpha=0.001):
 
 		#shortcut by avg pooling
 		pool_x_size = s1[0]*s2[0]
@@ -494,20 +553,26 @@ class Model:
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
-		x = activations.relu(x, alpha=alpha)
+		if activation == "tanh":
+			x = layers.Activation(activations.tanh)(x)
+		elif activation == "relu":
+			x = activations.relu(x, alpha=alpha)
 
 		x = layers.Conv2D(n2, k2, padding=p2, kernel_initializer=initializers.Orthogonal(0.5),
 			strides=s2, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
-		x = activations.relu(x, alpha=alpha)
+		if activation == "tanh":
+			x = layers.Activation(activations.tanh)(x)
+		elif activation == "relu":
+			x = activations.relu(x, alpha=alpha)
 
 		return layers.Add()([x, y])
 	
 
 	def module_deconv(self, x, n1, n2, k1=(4,4), k2=(2,2), s1=(2,2), s2=(1,1),
-		p1="same", p2="same", bn2=True, alpha=0.001):
+		p1="same", p2="same", activation="relu", bn2=True, alpha=0.001):
 
 		#shortcut by linear upsampling
 		pool_x_size = s1[0]*s2[0]
@@ -529,14 +594,20 @@ class Model:
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
-		x = activations.relu(x, alpha=alpha)
+		if activation == "tanh":
+			x = layers.Activation(activations.tanh)(x)
+		elif activation == "relu":
+			x = activations.relu(x, alpha=alpha)
 
 		x = layers.Conv2DTranspose(n2, k2, padding=p2, kernel_initializer=initializers.Orthogonal(0.5),
 			strides=s2, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
-		x = activations.relu(x, alpha=alpha)
+		if activation == "tanh":
+			x = layers.Activation(activations.tanh)(x)
+		elif activation == "relu":
+			x = activations.relu(x, alpha=alpha)
 
 		x = layers.Add()([x, y])
 		
@@ -587,8 +658,49 @@ class Model:
 			x2 = layers.Activation(activations.tanh)(x2)
 		elif activation == "relu":
 			x2 = activations.relu(x2, alpha=alpha)
-
+ 
 		return layers.Add()([layers.Multiply()([x1, g1]), layers.Multiply()([x2, g2])])
+
+	
+	def module_projected_sin(self, x, n=1, s=(320, 240), scale=2.0/320):
+		#output shape: (s(0), s(1), n*2)
+
+		batch_size = tf.shape(x)[0]
+
+		x = layers.Flatten()(x)
+		x = layers.Dense(8*n,
+			kernel_initializer=initializers.Orthogonal(0.001),
+			activity_regularizer=L2Regularizer(0.01))(x)
+		x = layers.Reshape((n,8))(x)
+		x = tf.concat([x, tf.ones((batch_size, n, 1))], axis=2)
+		x = tf.reshape(x, [batch_size*n,3,3])
+
+		i = tf.repeat(tf.expand_dims(tf.eye(3), axis=0), batch_size*n, axis=0)
+		xx, yy = tf.meshgrid(
+			tf.linspace(-s[0]+0.5, s[0]-0.5, s[0]),
+			tf.linspace(-s[1]+0.5, s[1]-0.5, s[1])
+		)
+
+		xx = tf.expand_dims(xx, axis=0) * scale
+		yy = tf.expand_dims(yy, axis=0) * scale
+		p = tf.concat([xx, yy, tf.ones_like(xx)], axis=0)
+		p = tf.reshape(p, [3, s[0]*s[1]])
+
+		# projection
+		x = tf.linalg.matmul(i+x, tf.broadcast_to(p, [batch_size*n, *p.shape]))
+		
+		x = tf.reshape(x, [batch_size*n, 3, s[1], s[0]])
+
+		# depth division
+		x2 = x[:,:2,:,:] / (x[:,2:3,:,:] + 1.0e-5)
+
+		x2 = tf.reshape(x2, [batch_size, 2*n, s[1], s[0]])
+		x2 = tf.transpose(x2, perm=[0,2,3,1])
+
+		x2 = tf.math.sin(x2)
+
+		return x2
+
 	
 
 	def create_image_encoder_model(self, feature_multiplier=1):
@@ -620,31 +732,32 @@ class Model:
 
 		# camera branch
 		x = self.model_image_encoder_i_image[:,:,:,0:3]
-		x = self.module_conv(x, 8*feature_multiplier, 8*feature_multiplier) #160x120
-		x = self.module_conv(x, 16*feature_multiplier, 16*feature_multiplier) #80x60
-		x = self.module_conv(x, 32*feature_multiplier, 32*feature_multiplier) #40x30
-		x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier, k2=(1,1)) #20x15
+		x = self.module_conv(x, 8*feature_multiplier, 8*feature_multiplier, activation="tanh") #160x120
+		x = self.module_conv(x, 16*feature_multiplier, 16*feature_multiplier, activation="tanh") #80x60
+		x = self.module_conv(x, 32*feature_multiplier, 32*feature_multiplier, activation="tanh") #40x30
+		x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier, k2=(1,1), activation="tanh") #20x15
 		x = self.module_conv(x, 128*feature_multiplier, 128*feature_multiplier,
-			k1=(3,2), s1=(3,2), k2=(3,3), s2=(1,2)) #5x5
+			k1=(3,2), s1=(3,2), k2=(3,3), s2=(1,2), activation="tanh") #5x5
 		x = self.module_conv(x, 256*feature_multiplier, 256*feature_multiplier,
-			s1=(1,1), p1="valid", p2="valid") #1x1
+			s1=(1,1), p1="valid", p2="valid", activation="tanh") #1x1
 		x = layers.Flatten()(x)
 
 		# automap branch
 		y = self.model_image_encoder_i_image[:,:,:,3:4]
-		y = self.module_conv(y, 8*feature_multiplier, 8*feature_multiplier) #160x120
-		y = self.module_conv(y, 16*feature_multiplier, 16*feature_multiplier) #80x60
-		y = self.module_conv(y, 32*feature_multiplier, 32*feature_multiplier) #40x30
-		y = self.module_conv(y, 64*feature_multiplier, 64*feature_multiplier, k2=(1,1)) #20x15
+		y = self.module_conv(y, 8*feature_multiplier, 8*feature_multiplier, activation="tanh") #160x120
+		y = self.module_conv(y, 16*feature_multiplier, 16*feature_multiplier, activation="tanh") #80x60
+		y = self.module_conv(y, 32*feature_multiplier, 32*feature_multiplier, activation="tanh") #40x30
+		y = self.module_conv(y, 64*feature_multiplier, 64*feature_multiplier, k2=(1,1), activation="tanh") #20x15
 		y = self.module_conv(y, 128*feature_multiplier, 128*feature_multiplier,
-			k1=(3,2), s1=(3,2), k2=(3,3), s2=(1,2)) #5x5
+			k1=(3,2), s1=(3,2), k2=(3,3), s2=(1,2), activation="tanh") #5x5
 		y = self.module_conv(y, 256*feature_multiplier, 256*feature_multiplier,
-			s1=(1,1), p1="valid", p2="valid") #1x1
+			s1=(1,1), p1="valid", p2="valid", activation="tanh") #1x1
 		y = layers.Flatten()(y)
 
-		x = self.module_fusion(x, y, self.image_enc_size, activation="relu")
+		x = self.module_fusion(x, y, self.image_enc_size, activation="tanh")
 		self.model_image_encoder_o_image_enc = layers.Dense(self.image_enc_size,
-			activation="sigmoid", kernel_initializer=self.initializer)(x)
+			activation="linear", kernel_initializer=self.initializer,
+			activity_regularizer=L2Regularizer(0.001))(x)
 
 		self.model_image_encoder = keras.Model(
 			inputs=self.model_image_encoder_i_image,
@@ -653,27 +766,78 @@ class Model:
 		# self.model_image_encoder.summary()
 	
 
+	def create_positional_embedding(self, shape, n):
+		#x, y = tf.meshgrid(tf.linspace(-159.5, 159.5, 320), tf.linspace(-119.5, 119.5, 240))
+		x, y = tf.meshgrid(
+			tf.linspace(-shape[1]+0.5, shape[1]-0.5, shape[1]),
+			tf.linspace(-shape[0]+0.5, shape[0]-0.5, shape[0])
+		)
+
+		emb_list = []
+		for i in range(n):
+			emb_list.append(tf.sin(x/((2**i)/np.pi)))
+			emb_list.append(tf.sin(y/((2**i)/np.pi)))
+
+		return tf.constant(tf.stack(emb_list, axis=2))
+
+
+	def create_positional_embedding_mesh(self, shape):
+		x = tf.convert_to_tensor([
+			[-1.0, -1.0],
+			[1.0, 1.0]])
+		y = tf.convert_to_tensor([
+			[-1.0, 1.0],
+			[-1.0, 1.0]])
+		xy = tf.stack([x, y], axis=2)
+
+		xyr = tf.tile(xy, multiples=[int(shape[0]/2), int(shape[1]/2), 1])
+
+		return tf.constant(xyr)
+
+
 	def create_image_decoder_model(self, feature_multiplier=1):
 		self.model_image_decoder_i_image_enc = keras.Input(shape=(self.image_enc_size))
 
-		x = layers.Reshape((1, 1, -1))(self.model_image_decoder_i_image_enc)
+		x = layers.Reshape((15, 20, -1))(self.model_image_decoder_i_image_enc)
+		e = self.create_positional_embedding((15,20), 5)
+		x = layers.Concatenate()([x, tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])])
 
-		x = self.module_deconv(x, 128*feature_multiplier, 128*feature_multiplier,
-			k1=(3,3), s1=(1,1), k2=(3,3), s2=(1,1), p1="valid", p2="valid") #5x5
+		x = self.module_conv(x, 32*feature_multiplier, 64*feature_multiplier,
+			k1=(3,3), k2=(1,3), s1=(1,1), s2=(1,1), activation="tanh") #20x15
+
 		x = self.module_deconv(x, 128*feature_multiplier, 64*feature_multiplier,
-			k1=(3,4), s1=(3,4), k2=(3,3), s2=(1,1)) #20x15
-		x = self.module_deconv(x, 64*feature_multiplier, 32*feature_multiplier) #40x30
-		x = self.module_deconv(x, 32*feature_multiplier, 16*feature_multiplier) #80x60
-		x = self.module_deconv(x, 16*feature_multiplier, 8*feature_multiplier) #160x120
-		x = self.module_deconv(x, 8*feature_multiplier, 4*feature_multiplier) #320x240
-		
+			k1=(2,2), k2=(2,2), activation="tanh") #40x30
+		e = self.create_positional_embedding_mesh((x.shape[1], x.shape[2]))
+		x = layers.Concatenate()([x, tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])])
+
+		x = self.module_deconv(x, 64*feature_multiplier, 32*feature_multiplier,
+			k1=(2,2), k2=(2,2), activation="tanh") #80x60
+		e = self.create_positional_embedding_mesh((x.shape[1], x.shape[2]))
+		x = layers.Concatenate()([x, tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])])
+
+		x = self.module_deconv(x, 32*feature_multiplier, 16*feature_multiplier,
+			k1=(2,2), k2=(2,2), activation="tanh") #160x120
+		e = self.create_positional_embedding_mesh((x.shape[1], x.shape[2]))
+		x = layers.Concatenate()([x, tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])])
+
+		x = self.module_deconv(x, 16*feature_multiplier, 8*feature_multiplier,
+			k1=(2,2), k2=(2,2), activation="tanh") #320x240
+		e = self.create_positional_embedding_mesh((x.shape[1], x.shape[2]))
+		x = layers.Concatenate()([x, tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])])
+
 		self.model_image_decoder_o_image = layers.Conv2D(
 			3, (1, 1), kernel_initializer=initializers.Orthogonal(0.01),
-			padding="same", activation="sigmoid")(x)
+			activation="sigmoid")(x)
+
+		self.model_image_decoder_o_depth = layers.Conv2D(
+			1, (1, 1), kernel_initializer=initializers.Orthogonal(0.01),
+			activation="linear")(x)
 
 		self.model_image_decoder = keras.Model(
 			inputs=[self.model_image_decoder_i_image_enc],
-			outputs=[self.model_image_decoder_o_image],
+			outputs=[
+				self.model_image_decoder_o_image,
+				self.model_image_decoder_o_depth],
 			name="model_image_decoder")
 		# self.model_image_decoder.summary()
 
@@ -902,16 +1066,35 @@ class Model:
 
 			state_prev = state_init
 			loss_total = 0.0
+			loss_decode = 0.0
+			loss_decode_gradient = 0.0
+			loss_decode_gradient2 = 0.0
+			loss_decode_gradient4 = 0.0
+			loss_decode_gradient8 = 0.0
+			loss_decode_gradient16 = 0.0
 			g_model_image_encoder = None
 			g_model_image_decoder = None
 			for i in range(self.replay_sample_length):
-				image_pred, gi_model_image_encoder, gi_model_image_decoder, loss_total_tf=\
+				image_pred, depth_pred, gi_model_image_encoder, gi_model_image_decoder,\
+					loss_total_tf, loss_decode_tf,\
+					loss_decode_gradient_tf, loss_decode_gradient2_tf, loss_decode_gradient4_tf,\
+					loss_decode_gradient8_tf, loss_decode_gradient16_tf=\
 					self.train_autoencoder(images, tf.convert_to_tensor(i))
 				
 				loss_total += loss_total_tf.numpy()
+				loss_decode += loss_decode_tf.numpy()
+				loss_decode_gradient += loss_decode_gradient_tf.numpy()
+				loss_decode_gradient2 += loss_decode_gradient2_tf.numpy()
+				loss_decode_gradient4 += loss_decode_gradient4_tf.numpy()
+				loss_decode_gradient8 += loss_decode_gradient8_tf.numpy()
+				loss_decode_gradient16 += loss_decode_gradient16_tf.numpy()
 
-				print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f}".format(
-					e, i, self.replay_sample_length, loss_total/i),
+				print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_d: {:8.5f} l_dg: {:8.5f} {:8.5f} {:8.5f} {:8.5f} {:8.5f}".format(
+					e, i, self.replay_sample_length,
+					loss_total/(i+1), loss_decode/(i+1),
+					loss_decode_gradient/(i+1), loss_decode_gradient2/(i+1),
+					loss_decode_gradient4/(i+1), loss_decode_gradient8/(i+1),
+					loss_decode_gradient16/(i+1)),
 					end="\r")
 				
 				if g_model_image_encoder is None:
@@ -924,8 +1107,109 @@ class Model:
 				else:
 					g_model_image_decoder = [a+b for a,b in zip(g_model_image_decoder, gi_model_image_decoder)]
 
-				show_frame_comparison(images[i][e%self.n_replay_episodes,:,:,0:3],
-					image_pred[e%self.n_replay_episodes])
+				show_frame_comparison(
+					images[i][e%self.n_replay_episodes,:,:,0:3],
+					image_pred[e%self.n_replay_episodes],
+					"rgb"
+				)
+
+				show_frame_comparison(
+					images[i][e%self.n_replay_episodes,:,:,4:5],
+					depth_pred[e%self.n_replay_episodes],
+					"depth"
+				)
+
+				# full-resolution gradient visualization
+				image_x_grad, image_y_grad = image_gradient(images[i][:,:,:,0:3])
+				image_pred_x_grad, image_pred_y_grad = image_gradient(image_pred)
+				show_frame_comparison(
+					0.5+image_x_grad[e%self.n_replay_episodes],
+					0.5+image_pred_x_grad[e%self.n_replay_episodes],
+					"x_grad"
+				)
+				show_frame_comparison(
+					0.5+image_y_grad[e%self.n_replay_episodes],
+					0.5+image_pred_y_grad[e%self.n_replay_episodes],
+					"y_grad"
+				)
+
+				images2 = layers.AveragePooling2D((2,2))(images[i][:,:,:,0:3])
+				images_pred2 = layers.AveragePooling2D((2,2))(image_pred)
+				image_x_grad2, image_y_grad2 = image_gradient(images2)
+				image_pred_x_grad2, image_pred_y_grad2 = image_gradient(images_pred2)
+				show_frame_comparison(
+					0.5+tf.image.resize(image_x_grad2[e%self.n_replay_episodes], [238, 320],
+					method="nearest"),
+					0.5+tf.image.resize(image_pred_x_grad2[e%self.n_replay_episodes], [238, 320],
+					method="nearest"),
+					"x_grad2"
+				)
+				show_frame_comparison(
+					0.5+tf.image.resize(image_y_grad2[e%self.n_replay_episodes], [240, 318],
+					method="nearest"),
+					0.5+tf.image.resize(image_pred_y_grad2[e%self.n_replay_episodes], [240, 318],
+					method="nearest"),
+					"y_grad2"
+				)
+
+				images4 = layers.AveragePooling2D((2,2))(images2)
+				images_pred4 = layers.AveragePooling2D((2,2))(images_pred2)
+				image_x_grad4, image_y_grad4 = image_gradient(images4)
+				image_pred_x_grad4, image_pred_y_grad4 = image_gradient(images_pred4)
+				show_frame_comparison(
+					0.5+tf.image.resize(image_x_grad4[e%self.n_replay_episodes], [236, 320],
+					method="nearest"),
+					0.5+tf.image.resize(image_pred_x_grad4[e%self.n_replay_episodes], [236, 320],
+					method="nearest"),
+					"x_grad4"
+				)
+				show_frame_comparison(
+					0.5+tf.image.resize(image_y_grad4[e%self.n_replay_episodes], [240, 316],
+					method="nearest"),
+					0.5+tf.image.resize(image_pred_y_grad4[e%self.n_replay_episodes], [240, 316],
+					method="nearest"),
+					"y_grad4"
+				)
+
+				images8 = layers.AveragePooling2D((2,2))(images4)
+				images_pred8 = layers.AveragePooling2D((2,2))(images_pred4)
+				image_x_grad8, image_y_grad8 = image_gradient(images8)
+				image_pred_x_grad8, image_pred_y_grad8 = image_gradient(images_pred8)
+				show_frame_comparison(
+					0.5+tf.image.resize(image_x_grad8[e%self.n_replay_episodes], [232, 320],
+					method="nearest"),
+					0.5+tf.image.resize(image_pred_x_grad8[e%self.n_replay_episodes], [232, 320],
+					method="nearest"),
+					"x_grad8"
+				)
+				show_frame_comparison(
+					0.5+tf.image.resize(image_y_grad8[e%self.n_replay_episodes], [240, 312],
+					method="nearest"),
+					0.5+tf.image.resize(image_pred_y_grad8[e%self.n_replay_episodes], [240, 312],
+					method="nearest"),
+					"y_grad8"
+				)
+
+				images16 = layers.AveragePooling2D((2,2))(images8)
+				images_pred16 = layers.AveragePooling2D((2,2))(images_pred8)
+				image_x_grad16, image_y_grad16 = image_gradient(images16)
+				image_pred_x_grad16, image_pred_y_grad16 = image_gradient(images_pred16)
+				show_frame_comparison(
+					0.5+tf.image.resize(image_x_grad16[e%self.n_replay_episodes], [224, 320],
+					method="nearest"),
+					0.5+tf.image.resize(image_pred_x_grad16[e%self.n_replay_episodes], [224, 320],
+					method="nearest"),
+					"x_grad16"
+				)
+				show_frame_comparison(
+					0.5+tf.image.resize(image_y_grad16[e%self.n_replay_episodes], [240, 304],
+					method="nearest"),
+					0.5+tf.image.resize(image_pred_y_grad16[e%self.n_replay_episodes], [240, 304],
+					method="nearest"),
+					"y_grad16"
+				)
+
+				cv2.waitKey(1)
 			print("")
 
 			self.optimizer.apply_gradients(zip(g_model_image_encoder,

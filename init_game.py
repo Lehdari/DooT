@@ -27,7 +27,7 @@ def init_game(episode_length, window_visible):
     game.set_screen_format(vzd.ScreenFormat.RGB24)
     #game.set_screen_format(vzd.ScreenFormat.GRAY8)
     # Enables depth buffer.
-    game.set_depth_buffer_enabled(False)
+    game.set_depth_buffer_enabled(True)
 
     # Enables labeling of in game objects labeling.
     game.set_labels_buffer_enabled(False)
@@ -49,8 +49,8 @@ def init_game(episode_length, window_visible):
     game.set_render_minimal_hud(True)  # If hud is enabled
     game.set_render_crosshair(False)
     game.set_render_weapon(True)
-    game.set_render_decals(True)  # Bullet holes and blood on the walls
-    game.set_render_particles(True)
+    game.set_render_decals(False)  # Bullet holes and blood on the walls
+    game.set_render_particles(False)
     game.set_render_effects_sprites(False)  # Smoke and blood
     game.set_render_messages(False)  # In-game messages
     game.set_render_corpses(True)
