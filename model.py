@@ -16,6 +16,7 @@ import gc
 import os
 import cv2
 from tensorflow.python.framework.ops import disable_eager_execution
+from image_loss import ImageLoss
 
 
 config = ConfigProto()
@@ -44,14 +45,6 @@ class MaxRegularizer(regularizers.Regularizer):
 
 	def __call__(self, x):
 		return self.strength * self.batch_size * tf.reduce_max(tf.abs(x))
-
-def image_gradient(image):
-	x_grad = image[:,1:,:,:] - image[:,:-1,:,:]
-	y_grad = image[:,:,1:,:] - image[:,:,:-1,:]
-	return x_grad, y_grad
-
-def loss_image(y_true, y_pred):
-	return tf.reduce_mean(tf.abs(y_true - y_pred)) + 1.5*tf.reduce_mean(tf.square(y_true - y_pred))
 
 
 def loss_function_inverse(action_true, action_pred):
@@ -162,8 +155,6 @@ class Model:
 			clipnorm=0.1, clipvalue=1.0)
 		self.action_optimizer = self.optimizer#keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999)
 		self.loss_function = keras.losses.MeanSquaredError()
-		self.loss_image = loss_image
-		#self.loss_action = loss_action
 
 		self.state_size = 512
 		self.image_enc_size = 15*20*8
@@ -217,15 +208,16 @@ class Model:
 	def define_training_functions(self):
 
 		@tf.function(input_signature=[
-			tf.TensorSpec(shape=(self.replay_sample_length, 8, 240, 320, 4), dtype=tf.float32),
+			tf.TensorSpec(shape=(self.replay_sample_length, 8, 240, 320, 3), dtype=tf.float32),
+			tf.TensorSpec(shape=(self.replay_sample_length, 8, 240, 320, 1), dtype=tf.float32),
 			tf.TensorSpec(shape=(self.replay_sample_length, 8, 15), dtype=tf.float32),
 			tf.TensorSpec(shape=(self.replay_sample_length, 8), dtype=tf.float32),
 			tf.TensorSpec(shape=(8, self.state_size), dtype=tf.float32),
 			tf.TensorSpec(shape=(), dtype=tf.int32)
 		])
-		def train_image_encoder_model(images, actions, rewards, state_init, i):
+		def train_image_encoder_model(image, automap, actions, rewards, state_init, i):
 			with tf.GradientTape(persistent=True) as gt:
-				image_enc = self.model_image_encoder(images[i], training=True)
+				image_enc = self.model_image_encoder(image, automap, training=True)
 				state = self.model_state([state_init, image_enc], training=True)
 				reward = self.model_reward([state, actions[i]], training=True)
 				states = [state]
@@ -237,7 +229,7 @@ class Model:
 				for j in range(1, self.tbptt_length_encoder):
 					image_enc_pred = self.model_forward([state, actions[i+j-1]])
 
-					image_enc = self.model_image_encoder(images[i+j], training=True)
+					image_enc = self.model_image_encoder(image[i+j], automap[i+j], training=True)
 					state = self.model_state([state, image_enc], training=True)
 					reward = self.model_reward([state, actions[i+j]], training=True)
 					states.append(state)
@@ -272,7 +264,7 @@ class Model:
 			g_model_forward = gt.gradient(loss_total, self.model_forward.trainable_variables)
 			g_model_reward = gt.gradient(loss_total, self.model_reward.trainable_variables)
 			
-			state = self.model_state([state_init, self.model_image_encoder(images[i],
+			state = self.model_state([state_init, self.model_image_encoder(image[i], automap[i],
 				training=False)], training=False)
 			
 			return state, g_model_image_encoder, g_model_state, g_model_inverse, g_model_forward, g_model_reward,\
@@ -396,71 +388,33 @@ class Model:
 		])
 		def train_autoencoder(images, i):
 			with tf.GradientTape(persistent=True) as gt:
-				image_enc = self.model_image_encoder(images[i][:,:,:,0:4], training=True)
+				image = images[i][:,:,:,1:4]
+				automap = images[i][:,:,:,0:1]
+				image_enc = self.model_image_encoder([image, automap], training=True)
 				image_pred, depth_pred = self.model_image_decoder(image_enc, training=True)
 
-				hud_attenuation = 0.05
-				hud_att_mask = tf.where(images[i][:,:,:,4:5] > 0.0,
-					tf.ones_like(images[i][:,:,:,4:5]),
-					tf.ones_like(images[i][:,:,:,4:5])*hud_attenuation)
+				# hud_attenuation = 0.05
+				# hud_att_mask = tf.where(images[i][:,:,:,4:5] > 0.0,
+				# 	tf.ones_like(images[i][:,:,:,4:5]),
+				# 	tf.ones_like(images[i][:,:,:,4:5])*hud_attenuation)
 				
-				image_att = images[i][:,:,:,0:3]*hud_att_mask
-				image_pred_att = image_pred[:,:,:,0:3]*hud_att_mask
+				# image_att = images[i][:,:,:,0:3]*hud_att_mask
+				# image_pred_att = image_pred[:,:,:,0:3]*hud_att_mask
 				
-				loss_decode = loss_image(image_att, image_pred_att)
+				# image_loss = ImageLoss(image, image_pred)
 
-				grad_x_image, grad_y_image = image_gradient(images[i][:,:,:,0:3])
-				grad_x_image_pred, grad_y_image_pred = image_gradient(image_pred[:,:,:,0:3])
-				loss_decode_gradient =\
-					loss_image(grad_x_image, grad_x_image_pred) +\
-					loss_image(grad_y_image, grad_y_image_pred)
-				
-				images2 = layers.AveragePooling2D((2,2))(images[i][:,:,:,0:3])
-				images_pred2 = layers.AveragePooling2D((2,2))(image_pred[:,:,:,0:3])
-				grad_x_image2, grad_y_image2 = image_gradient(images2)
-				grad_x_image_pred2, grad_y_image_pred2 = image_gradient(images_pred2)
-				loss_decode_gradient2 =\
-					loss_image(grad_x_image2, grad_x_image_pred2) +\
-					loss_image(grad_y_image2, grad_y_image_pred2)
-				
-				images4 = layers.AveragePooling2D((2,2))(images2)
-				images_pred4 = layers.AveragePooling2D((2,2))(images_pred2)
-				grad_x_image4, grad_y_image4 = image_gradient(images4)
-				grad_x_image_pred4, grad_y_image_pred4 = image_gradient(images_pred4)
-				loss_decode_gradient4 =\
-					loss_image(grad_x_image4, grad_x_image_pred4) +\
-					loss_image(grad_y_image4, grad_y_image_pred4)
-				
-				images8 = layers.AveragePooling2D((2,2))(images4)
-				images_pred8 = layers.AveragePooling2D((2,2))(images_pred4)
-				grad_x_image8, grad_y_image8 = image_gradient(images8)
-				grad_x_image_pred8, grad_y_image_pred8 = image_gradient(images_pred8)
-				loss_decode_gradient8 =\
-					loss_image(grad_x_image8, grad_x_image_pred8) +\
-					loss_image(grad_y_image8, grad_y_image_pred8)
-				
-				images16 = layers.AveragePooling2D((2,2))(images8)
-				images_pred16 = layers.AveragePooling2D((2,2))(images_pred8)
-				grad_x_image16, grad_y_image16 = image_gradient(images16)
-				grad_x_image_pred16, grad_y_image_pred16 = image_gradient(images_pred16)
-				loss_decode_gradient16 =\
-					loss_image(grad_x_image16, grad_x_image_pred16) +\
-					loss_image(grad_y_image16, grad_y_image_pred16)
-				
-				loss_depth = loss_image(images[i][:,:,:,4:5], depth_pred)
-
-				loss_total = loss_decode + loss_decode_gradient +\
-					loss_decode_gradient2 + loss_decode_gradient4 +\
-					loss_decode_gradient8 + loss_decode_gradient16 +\
-					loss_depth
+				image_combined = images[i][:,:,:,1:]
+				image_combined_pred = layers.Concatenate()([image_pred, depth_pred])
+				image_loss = ImageLoss(image_combined, image_combined_pred)
+				loss_total = image_loss.total_loss()
 
 			g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
 			g_model_image_decoder = gt.gradient(loss_total, self.model_image_decoder.trainable_variables)
-			
+
 			return image_pred, depth_pred, g_model_image_encoder, g_model_image_decoder,\
-				loss_total, loss_decode,\
-				loss_decode_gradient, loss_decode_gradient2, loss_decode_gradient4,\
-				loss_decode_gradient8, loss_decode_gradient16
+				loss_total, image_loss.loss_image,\
+				image_loss.loss_grad[0], image_loss.loss_grad[1], image_loss.loss_grad[2],\
+				image_loss.loss_grad[3], image_loss.loss_grad[4]
 
 		self.train_image_encoder_model = train_image_encoder_model
 		self.train_backbone_inverse = train_backbone_inverse
@@ -704,7 +658,8 @@ class Model:
 	
 
 	def create_image_encoder_model(self, feature_multiplier=1):
-		self.model_image_encoder_i_image = keras.Input(shape=(240, 320, 4))
+		self.model_image_encoder_i_image = keras.Input(shape=(240, 320, 3))
+		self.model_image_encoder_i_automap = keras.Input(shape=(240, 320, 1))
 
 		# # camera branch
 		# x = self.module_conv(self.model_image_encoder_i_image[:,:,:,0:3],
@@ -731,7 +686,7 @@ class Model:
 		# y = layers.Flatten()(y)
 
 		# camera branch
-		x = self.model_image_encoder_i_image[:,:,:,0:3]
+		x = self.model_image_encoder_i_image
 		x = self.module_conv(x, 8*feature_multiplier, 8*feature_multiplier, activation="tanh") #160x120
 		x = self.module_conv(x, 16*feature_multiplier, 16*feature_multiplier, activation="tanh") #80x60
 		x = self.module_conv(x, 32*feature_multiplier, 32*feature_multiplier, activation="tanh") #40x30
@@ -743,7 +698,7 @@ class Model:
 		x = layers.Flatten()(x)
 
 		# automap branch
-		y = self.model_image_encoder_i_image[:,:,:,3:4]
+		y = self.model_image_encoder_i_automap
 		y = self.module_conv(y, 8*feature_multiplier, 8*feature_multiplier, activation="tanh") #160x120
 		y = self.module_conv(y, 16*feature_multiplier, 16*feature_multiplier, activation="tanh") #80x60
 		y = self.module_conv(y, 32*feature_multiplier, 32*feature_multiplier, activation="tanh") #40x30
@@ -760,7 +715,10 @@ class Model:
 			activity_regularizer=L2Regularizer(0.001))(x)
 
 		self.model_image_encoder = keras.Model(
-			inputs=self.model_image_encoder_i_image,
+			inputs=[
+				self.model_image_encoder_i_image,
+				self.model_image_encoder_i_automap
+			],
 			outputs=self.model_image_encoder_o_image_enc,
 			name="model_image_encoder")
 		# self.model_image_encoder.summary()
@@ -1107,107 +1065,44 @@ class Model:
 				else:
 					g_model_image_decoder = [a+b for a,b in zip(g_model_image_decoder, gi_model_image_decoder)]
 
+				image = images[i][:,:,:,1:]
+				image_pred_stacked = layers.Concatenate(axis=3)([image_pred, depth_pred])
+				image_loss = ImageLoss(image, image_pred_stacked)
+
 				show_frame_comparison(
-					images[i][e%self.n_replay_episodes,:,:,0:3],
-					image_pred[e%self.n_replay_episodes],
+					image[e%self.n_replay_episodes,:,:,0:3],
+					image_pred_stacked[e%self.n_replay_episodes,:,:,0:3],
 					"rgb"
 				)
 
 				show_frame_comparison(
-					images[i][e%self.n_replay_episodes,:,:,4:5],
-					depth_pred[e%self.n_replay_episodes],
+					image[e%self.n_replay_episodes,:,:,3:4],
+					image_pred_stacked[e%self.n_replay_episodes,:,:,3:4],
 					"depth"
 				)
 
-				# full-resolution gradient visualization
-				image_x_grad, image_y_grad = image_gradient(images[i][:,:,:,0:3])
-				image_pred_x_grad, image_pred_y_grad = image_gradient(image_pred)
-				show_frame_comparison(
-					0.5+image_x_grad[e%self.n_replay_episodes],
-					0.5+image_pred_x_grad[e%self.n_replay_episodes],
-					"x_grad"
-				)
-				show_frame_comparison(
-					0.5+image_y_grad[e%self.n_replay_episodes],
-					0.5+image_pred_y_grad[e%self.n_replay_episodes],
-					"y_grad"
-				)
+				# for i in range(len(image_loss.grad_x)):
+				# 	show_frame_comparison(
+				# 		0.5+image_loss.grad_x[i][e%self.n_replay_episodes,:,:,0:3],
+				# 		0.5+image_loss.grad_x_pred[i][e%self.n_replay_episodes,:,:,0:3],
+				# 		f"x_grad{2**i}"
+				# 	)
+				# 	show_frame_comparison(
+				# 		0.5+image_loss.grad_y[i][e%self.n_replay_episodes,:,:,0:3],
+				# 		0.5+image_loss.grad_y_pred[i][e%self.n_replay_episodes,:,:,0:3],
+				# 		f"y_grad{2**i}"
+				# 	)
+				# 	show_frame_comparison(
+				# 		0.5+image_loss.grad_x[i][e%self.n_replay_episodes,:,:,3:4],
+				# 		0.5+image_loss.grad_x_pred[i][e%self.n_replay_episodes,:,:,3:4],
+				# 		f"x_grad_depth{2**i}"
+				# 	)
+				# 	show_frame_comparison(
+				# 		0.5+image_loss.grad_y[i][e%self.n_replay_episodes,:,:,3:4],
+				# 		0.5+image_loss.grad_y_pred[i][e%self.n_replay_episodes,:,:,3:4],
+				# 		f"y_grad_depth{2**i}"
+				# 	)
 
-				images2 = layers.AveragePooling2D((2,2))(images[i][:,:,:,0:3])
-				images_pred2 = layers.AveragePooling2D((2,2))(image_pred)
-				image_x_grad2, image_y_grad2 = image_gradient(images2)
-				image_pred_x_grad2, image_pred_y_grad2 = image_gradient(images_pred2)
-				show_frame_comparison(
-					0.5+tf.image.resize(image_x_grad2[e%self.n_replay_episodes], [238, 320],
-					method="nearest"),
-					0.5+tf.image.resize(image_pred_x_grad2[e%self.n_replay_episodes], [238, 320],
-					method="nearest"),
-					"x_grad2"
-				)
-				show_frame_comparison(
-					0.5+tf.image.resize(image_y_grad2[e%self.n_replay_episodes], [240, 318],
-					method="nearest"),
-					0.5+tf.image.resize(image_pred_y_grad2[e%self.n_replay_episodes], [240, 318],
-					method="nearest"),
-					"y_grad2"
-				)
-
-				images4 = layers.AveragePooling2D((2,2))(images2)
-				images_pred4 = layers.AveragePooling2D((2,2))(images_pred2)
-				image_x_grad4, image_y_grad4 = image_gradient(images4)
-				image_pred_x_grad4, image_pred_y_grad4 = image_gradient(images_pred4)
-				show_frame_comparison(
-					0.5+tf.image.resize(image_x_grad4[e%self.n_replay_episodes], [236, 320],
-					method="nearest"),
-					0.5+tf.image.resize(image_pred_x_grad4[e%self.n_replay_episodes], [236, 320],
-					method="nearest"),
-					"x_grad4"
-				)
-				show_frame_comparison(
-					0.5+tf.image.resize(image_y_grad4[e%self.n_replay_episodes], [240, 316],
-					method="nearest"),
-					0.5+tf.image.resize(image_pred_y_grad4[e%self.n_replay_episodes], [240, 316],
-					method="nearest"),
-					"y_grad4"
-				)
-
-				images8 = layers.AveragePooling2D((2,2))(images4)
-				images_pred8 = layers.AveragePooling2D((2,2))(images_pred4)
-				image_x_grad8, image_y_grad8 = image_gradient(images8)
-				image_pred_x_grad8, image_pred_y_grad8 = image_gradient(images_pred8)
-				show_frame_comparison(
-					0.5+tf.image.resize(image_x_grad8[e%self.n_replay_episodes], [232, 320],
-					method="nearest"),
-					0.5+tf.image.resize(image_pred_x_grad8[e%self.n_replay_episodes], [232, 320],
-					method="nearest"),
-					"x_grad8"
-				)
-				show_frame_comparison(
-					0.5+tf.image.resize(image_y_grad8[e%self.n_replay_episodes], [240, 312],
-					method="nearest"),
-					0.5+tf.image.resize(image_pred_y_grad8[e%self.n_replay_episodes], [240, 312],
-					method="nearest"),
-					"y_grad8"
-				)
-
-				images16 = layers.AveragePooling2D((2,2))(images8)
-				images_pred16 = layers.AveragePooling2D((2,2))(images_pred8)
-				image_x_grad16, image_y_grad16 = image_gradient(images16)
-				image_pred_x_grad16, image_pred_y_grad16 = image_gradient(images_pred16)
-				show_frame_comparison(
-					0.5+tf.image.resize(image_x_grad16[e%self.n_replay_episodes], [224, 320],
-					method="nearest"),
-					0.5+tf.image.resize(image_pred_x_grad16[e%self.n_replay_episodes], [224, 320],
-					method="nearest"),
-					"x_grad16"
-				)
-				show_frame_comparison(
-					0.5+tf.image.resize(image_y_grad16[e%self.n_replay_episodes], [240, 304],
-					method="nearest"),
-					0.5+tf.image.resize(image_pred_y_grad16[e%self.n_replay_episodes], [240, 304],
-					method="nearest"),
-					"y_grad16"
-				)
 
 				cv2.waitKey(1)
 			print("")

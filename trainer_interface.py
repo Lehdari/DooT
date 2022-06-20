@@ -107,7 +107,7 @@ class TrainerInterface:
 
 		automap = state_game.automap_buffer[:,:,0:1] # use the red channel, should be enough
 		depth = np.expand_dims(state_game.depth_buffer, axis=2)
-		screen_buf = np.concatenate([state_game.screen_buffer, automap, depth], axis=-1)
+		screen_buf = np.concatenate([automap, state_game.screen_buffer, depth], axis=-1)
 		# if self.window_visible:
 		# 	cv2.imshow("ViZDoom Automap", automap)
 		# 	cv2.waitKey(1)
