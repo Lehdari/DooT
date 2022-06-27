@@ -408,7 +408,12 @@ class Model:
 
 				image_combined = images[i][:,:,:,1:]
 				image_combined_pred = layers.Concatenate()([image_pred, depth_pred])
-				image_loss = ImageLoss(image_combined, image_combined_pred)
+				loss_mask = tf.cast(tf.where(images[i][:,:,:,4:5] > 0.001,
+					tf.ones_like(images[i][:,:,:,4:5]),
+					tf.zeros_like(images[i][:,:,:,4:5])), tf.float32)
+				image_loss = ImageLoss(image_combined, image_combined_pred,
+					loss_mask,
+					depth_weight=10.0)
 				loss_total = image_loss.total_loss()
 
 			g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
@@ -1168,7 +1173,10 @@ class Model:
 
 				image = images[i][:,:,:,1:]
 				image_pred_stacked = layers.Concatenate(axis=3)([image_pred, depth_pred])
-				image_loss = ImageLoss(image, image_pred_stacked)
+				loss_mask = tf.cast(tf.where(images[i][:,:,:,4:5] > 0.001,
+					tf.ones_like(images[i][:,:,:,4:5]),
+					tf.zeros_like(images[i][:,:,:,4:5])), tf.float32)
+				image_loss = ImageLoss(image, image_pred_stacked, loss_mask)
 
 				show_frame_comparison(
 					image[e%self.n_replay_episodes,:,:,0:3],
@@ -1181,6 +1189,12 @@ class Model:
 					image_pred_stacked[e%self.n_replay_episodes,:,:,3:4],
 					"depth"
 				)
+
+				# show_frame_comparison(
+				# 	image_loss.loss_masks[0][e%self.n_replay_episodes,:,:,:],
+				# 	image_loss.loss_masks[0][e%self.n_replay_episodes,:,:,:],
+				# 	"loss mask"
+				# )
 
 				# for i in range(len(image_loss.grad_x)):
 				# 	show_frame_comparison(
@@ -1202,6 +1216,16 @@ class Model:
 				# 		0.5+image_loss.grad_y[i][e%self.n_replay_episodes,:,:,3:4],
 				# 		0.5+image_loss.grad_y_pred[i][e%self.n_replay_episodes,:,:,3:4],
 				# 		f"y_grad_depth{2**i}"
+				# 	)
+				# 	show_frame_comparison(
+				# 		image_loss.grad_x_mask[i][e%self.n_replay_episodes,:,:,:],
+				# 		image_loss.grad_x_mask[i][e%self.n_replay_episodes,:,:,:],
+				# 		f"x_grad_mask{2**i}"
+				# 	)
+				# 	show_frame_comparison(
+				# 		image_loss.grad_y_mask[i][e%self.n_replay_episodes,:,:,:],
+				# 		image_loss.grad_y_mask[i][e%self.n_replay_episodes,:,:,:],
+				# 		f"y_grad_mask{2**i}"
 				# 	)
 
 
