@@ -162,6 +162,9 @@ class Reward():
             tile_dist_start = np.linalg.norm(np.array([tile_x_middle, tile_y_middle]) -\
                 self.player_start_pos[0:2])
 
+            print(f"{self.player_start_pos}")
+            print(f"{tile_dist_start}")
+            
             self.exploration_tiles[tile_id] = 1.0 +\
                 np.power(max(tile_dist_start/2.0-30.0, 0.0), 0.3)
             
