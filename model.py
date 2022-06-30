@@ -187,6 +187,16 @@ class Model:
 		self.states = []
 
 		np.random.seed(1507715517)
+
+		###
+		# import tensorflow as tf
+		import datetime
+		current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+		train_log_dir = 'logs/' + current_time + '/train'
+		# test_log_dir = 'logs/' + current_time + '/test'
+		self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+		# self.test_summary_writer = tf.summary.create_file_writer(test_log_dir)
+		###
 		
 	
 	def save_episode_state_images(self, episode_id):
@@ -1232,6 +1242,17 @@ class Model:
 
 				cv2.waitKey(1)
 			print("")
+
+			###
+			# Update Tensorboard
+			with self.train_summary_writer.as_default():
+				tf.summary.scalar('loss_total', loss_total, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode', loss_decode, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode_gradient', loss_decode_gradient, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode_gradient2', loss_decode_gradient2, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode_gradient4', loss_decode_gradient4, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode_gradient8', loss_decode_gradient8, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode_gradient16', loss_decode_gradient16, step=num_epochs_trained)
 
 			self.optimizer.apply_gradients(zip(g_model_image_encoder,
 				self.model_image_encoder.trainable_variables))
