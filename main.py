@@ -46,7 +46,16 @@ def main():
         output_visual_log)
 
     if model_filename is not None:
-        model.load_model(model_filename, model_filename)
+        from os import listdir
+        from os.path import isfile, join
+        h5files = [f for f in listdir(model_filename) if isfile(join(model_filename, f))]
+        h5files = [f for f in h5files if ".h5" in f]
+        h5files = [f.split("_")[0] for f in h5files]
+        h5files = [f for f in h5files if "-" in f]
+
+
+        print("h5files:", h5files)
+        model.load_model(model_filename, h5files[0])
     trainer = TrainerSimple(reward_controller, n_replay_episodes, episode_length,
         min_episode_length, window_visible)
 

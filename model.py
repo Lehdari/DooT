@@ -1122,6 +1122,7 @@ class Model:
 		image_encs = tf.Variable(tf.zeros((self.replay_sample_length, n_sequences,
 			self.image_enc_size)))
 
+		num_epochs_trained = self.num_epochs_init
 		for e in range(self.n_training_epochs):
 			# compute initial states
 			# images, actions, rewards, state_init = memory.get_sample(self.replay_sample_length,
@@ -1237,10 +1238,19 @@ class Model:
 			self.optimizer.apply_gradients(zip(g_model_image_decoder,
 				self.model_image_decoder.trainable_variables))
 
-			self.save_model("model", "model")
+			# Model name tells how many epochs it has been trained
+			# Model branch tells its "genes" or "type" or origins
+			# so different architectures can be distinguished easily
+			branch = "001"
+			num_epochs_trained += 1
+			self.save_model("model", f"model-{branch}-{num_epochs_trained}")
 
 			del images, actions, rewards, state_init
 			gc.collect()
+
+		# Update this number
+		# Otherwise the file naming will suck
+		self.num_epochs_init = num_epochs_trained
 	
 	#@tf.function
 	def train_image_autoencoder(self, image):
@@ -1276,7 +1286,8 @@ class Model:
 
 	def save_model(self, folder_name, model_name):
 		# backup
-		ret = os.system("cp {}/* {}_backup/".format(folder_name, folder_name))
+		ret = os.system(f"rm {folder_name}_backup/*.h5")
+		ret = os.system(f"mv {folder_name}/* {folder_name}_backup/")
 
 		print("Saving model with prefix: {}/{}".format(folder_name, model_name))
 		self.model_image_encoder.save_weights("{}/{}_image_encoder.h5".format(folder_name, model_name))
@@ -1296,6 +1307,11 @@ class Model:
 			model.load_weights(backup_filename)
 		
 	def load_model(self, folder_name, model_name):
+		print("LOAD MODEL", model_name.split("-"))
+
+		self.num_branch = int(model_name.split("-")[1])
+		self.num_epochs_init = int(model_name.split("-")[2])
+
 		print("Loading model: {}/{}".format(folder_name, model_name))
 		self.load_with_backup(self.model_image_encoder,
 			"{}/{}_image_encoder.h5".format(folder_name, model_name),
