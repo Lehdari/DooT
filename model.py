@@ -1325,7 +1325,11 @@ class Model:
 		try:
 			model.load_weights(filename)
 		except:
-			model.load_weights(backup_filename)
+			try:
+				model.load_weights(backup_filename)
+			except:
+				print(f"Warning: Could not load model from {filename} or {backup_filename}")
+				pass
 		
 	def load_model(self, folder_name, model_name):
 		print("LOAD MODEL", model_name.split("-"))
