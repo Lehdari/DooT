@@ -53,9 +53,11 @@ def main():
         h5files = [f.split("_")[0] for f in h5files]
         h5files = [f for f in h5files if "-" in f]
 
-
         print("h5files:", h5files)
-        model.load_model(model_filename, h5files[0])
+        if h5files:
+            model.load_model(model_filename, h5files[0])
+        else:
+            print(f"Model with name {model_filename} not found, creating new model...")
     trainer = TrainerSimple(reward_controller, n_replay_episodes, episode_length,
         min_episode_length, window_visible)
 
