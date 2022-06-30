@@ -192,9 +192,9 @@ class Model:
 		# import tensorflow as tf
 		import datetime
 		current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-		train_log_dir = 'logs/' + current_time + '/train'
+		self.train_log_dir = 'logs/' + current_time + '/train'
 		# test_log_dir = 'logs/' + current_time + '/test'
-		self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+		self.train_summary_writer = tf.summary.create_file_writer(self.train_log_dir)
 		# self.test_summary_writer = tf.summary.create_file_writer(test_log_dir)
 		###
 
@@ -1318,7 +1318,7 @@ class Model:
 	def load_model(self, folder_name, model_name):
 		print("LOAD MODEL", model_name.split("-"))
 
-		self.num_branch = int(model_name.split("-")[1])
+		self.branch_id = model_name.split("-")[1]
 		self.num_epochs_init = int(model_name.split("-")[2])
 
 		print("Loading model: {}/{}".format(folder_name, model_name))
