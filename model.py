@@ -197,6 +197,8 @@ class Model:
 		self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
 		# self.test_summary_writer = tf.summary.create_file_writer(test_log_dir)
 		###
+
+		self.num_epochs_init = 0
 		
 	
 	def save_episode_state_images(self, episode_id):
