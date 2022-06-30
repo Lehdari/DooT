@@ -4,6 +4,7 @@ import vizdoom as vzd
 import numpy as np
 import argparse
 import concurrent.futures
+import gc
 
 from init_game import init_game
 from reward import Reward
@@ -73,6 +74,7 @@ def main():
 
             # replace memory with the new one
             del memory
+            gc.collect()
             memory = memory_future.result()
 
 print()
