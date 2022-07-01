@@ -53,3 +53,17 @@ mkdir model
 mkdir model_backup
 mkdir out
 ```
+
+## Training the neural network
+
+```
+python3 main.py
+```
+
+## Check results using TensorBoard
+
+```
+tensorboard --logdir logs/
+```
+
+then open the link (`http://localhost:6006/` by default) with your browser
