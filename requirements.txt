@@ -1,0 +1,3 @@
+vizdoom==1.1.13
+tensorflow
+tensorflow_addons
