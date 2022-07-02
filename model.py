@@ -54,6 +54,13 @@ def loss_function_inverse(action_true, action_pred):
 	return loss
 
 
+def learning_rate(t, t_max, t_min, lr_max, lr_min):
+	if t <= t_max:
+		return (t*(lr_max-lr_min))/t_max + lr_min
+	else:
+		return max(lr_max - ((t-t_max)*(lr_max-lr_min))/(t_min-t_max), lr_min)
+
+
 class ActionModel:
 	def __init__(self, model):
 		self.model_state = model.model_state
@@ -1227,6 +1234,8 @@ class Model:
 				cv2.waitKey(1)
 			print("")
 
+			self.optimizer.learning_rate.assign(learning_rate(num_epochs_trained, 64, 1024, 0.01, 0.001))
+
 			###
 			# Update Tensorboard
 			with self.train_summary_writer.as_default():
@@ -1237,6 +1246,7 @@ class Model:
 				tf.summary.scalar('loss_decode_gradient4', loss_decode_gradient4, step=num_epochs_trained)
 				tf.summary.scalar('loss_decode_gradient8', loss_decode_gradient8, step=num_epochs_trained)
 				tf.summary.scalar('loss_decode_gradient16', loss_decode_gradient16, step=num_epochs_trained)
+				tf.summary.scalar('learning_rate', self.optimizer.learning_rate, step=num_epochs_trained)
 
 			self.optimizer.apply_gradients(zip(g_model_image_encoder,
 				self.model_image_encoder.trainable_variables))
