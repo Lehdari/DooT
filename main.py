@@ -25,12 +25,12 @@ def main():
     model_filename = "model" # TODO TEMP
 
     runs = 16384
-    episode_length = 4096
-    min_episode_length = 2048
+    episode_length = 3000
+    min_episode_length = 2000
     replay_sample_length = 128
     # episode_length = 128
     # min_episode_length = 128
-    # replay_sample_length = 96
+    # replay_sample_length = 64
     n_replay_episodes = 8
     n_training_epochs = 8
     window_visible = False
