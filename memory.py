@@ -1,6 +1,8 @@
 import numpy as np
 import random
 import tensorflow as tf
+import os
+from pathlib import Path
 
 from os import mkdir, isdir
 from os import path
@@ -114,8 +116,39 @@ class Memory:
             tf.convert_to_tensor(state))
 
 
-    def save(self):
-        pass
+    def save(self, filename):
+        """
+        Save memory in compressed .npz format
+        """
+        directory = Path(filename).parents[0]
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        
+        with open(Path(filename), "wb") as f:
+            np.savez_compressed(f,
+                images=self.images,
+                actions=self.actions,
+                rewards=self.rewards,
+                episode_lengths=self.episode_lengths
+            )
 
-    def load(self):
-        pass
+    def load(self, filename):
+        """
+        Load memory from compressed .npz file
+        """
+        if not os.path.exists(Path(filename)):
+            print(f"Memory: Unable to load from {filename}, file does not exist.")
+        
+        loaded = np.load(Path(filename))
+
+        assert "images" in loaded
+        assert "actions" in loaded
+        assert "rewards" in loaded
+        assert "episode_lengths" in loaded
+
+        self.images = loaded["images"]
+        self.actions = loaded["actions"]
+        self.rewards = loaded["rewards"]
+        self.episode_lengths = loaded["episode_lengths"]
+        self.episode_length = self.images.shape[0]
+        self.n_episodes = self.images.shape[1]
