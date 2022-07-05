@@ -20,27 +20,50 @@ from os.path import isfile, join, isdir
 import sys
 import datetime
 
-
 def main():
     parser = argparse.ArgumentParser()
-    model_filename = ""
-    parser.add_argument('--model', type=str)
-    args = parser.parse_args()
-    model_filename = args.model
-    model_filename = "model" # TODO TEMP
 
-    runs = 16384
-    episode_length = 3000
-    min_episode_length = 2000
-    replay_sample_length = 128
-    # episode_length = 128
-    # min_episode_length = 128
-    # replay_sample_length = 64
-    n_replay_episodes = 8
-    n_training_epochs = 8
-    window_visible = False
-    output_visual_log = False
-    quiet = False
+    parser.add_argument('--model', type=str, help="model name in directory models/", default="model")
+    parser.add_argument('--quiet', action="store_true", help="suppress logging and plots", default=False)
+    parser.add_argument('--use-concurrent-training', action="store_true",
+        help="train and collect gameplay data concurrently", default=False)
+    parser.add_argument('--runs', type=int, help="number of training runs", default=16384)
+    parser.add_argument('--episode-length', type=int,
+        help="how many frames or steps the episode can be at maximum before it is ended",
+        default=4096)
+    parser.add_argument('--min-episode-length', type=int,
+        help="minimum episode length. episodes shorter than this are discarded",
+        default=2048)
+    parser.add_argument('--replay-sample-length', type=int,
+        help="how many frames are sampled from the memory each training epoch",
+        default=128)
+    parser.add_argument('--n-replay-episodes', type=int, help="",
+        default=8)
+    parser.add_argument('--n-training-epochs', type=int,
+        help="number of training epochs per each training run",
+        default=8)
+    parser.add_argument('--window-visible', action="store_true",
+        help="show vizdoom window during training (this is different from opencv/matplotlib plot images)",
+        default=False)
+
+    # Currently not used probably
+    parser.add_argument('--output-visual-log', action="store_true",
+        help="collect and save image flats, image encs, image enc preds and states to out/", default=False)
+
+    args = parser.parse_args()
+    # Assume that the args are correct without validating them
+
+    model_filename = args.model
+    episode_length = args.episode_length
+    runs = args.runs
+    min_episode_length = args.min_episode_length # TEMP Eljas: the piece of code that uses this is commented away
+    replay_sample_length = args.replay_sample_length
+    n_replay_episodes = args.n_replay_episodes # This has something to do with the action model. currently it's not used.
+    n_training_epochs = args.n_training_epochs
+    window_visible = args.window_visible
+    output_visual_log = args.output_visual_log
+    quiet = args.quiet
+    use_concurrent_training = args.use_concurrent_training
 
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     model_output_dir = 'logs/' + current_time + '/train'
@@ -76,26 +99,24 @@ def main():
 
     print("Model setup complete. Starting training episodes")
 
-    memory = trainer.run(model)
-    max_i = 10
-    for i in range(max_i):
-        print(f"Run {i} / {max_i}")
-        model.train(memory)
 
+    if not use_concurrent_training:
+        memory = trainer.run(model)
+        for i in range(runs):
+            print(f"Run {i} / {runs}")
+            model.train(memory)
+    else:
+        for i in range(runs):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                # start a new memory gathering run concurrently
+                memory_future = executor.submit(trainer.run, model.create_copy())
+            
+                model.train(memory)
 
-
-
-    # for i in range(runs):
-    #     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-    #         # start a new memory gathering run concurrently
-    #         memory_future = executor.submit(trainer.run, model.create_copy())
-        
-    #         model.train(memory)
-
-    #         # replace memory with the new one
-    #         del memory
-    #         gc.collect()
-    #         memory = memory_future.result()
+                # replace memory with the new one
+                del memory
+                gc.collect()
+                memory = memory_future.result()
 
 print()
 print("-------- starting ------------")
