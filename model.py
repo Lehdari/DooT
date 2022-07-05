@@ -1113,24 +1113,16 @@ class Model:
 
 
 	def train(self, memory):
-		print("=== train() ===")
-
 		n_sequences = memory.images.shape[1]
-		print(f"n sequences: {n_sequences}")
 		# image_encs = tf.Variable(tf.zeros((self.replay_sample_length, n_sequences,
 		# 	self.image_enc_size)))
 
 		num_epochs_trained = self.num_epochs_init
 
-		print(f"{num_epochs_trained} epochs trained")
-
 		for e in range(self.n_training_epochs):
-			print(f"epoch {e} / {self.n_training_epochs}")
-			
-			print(f"Replay sample length: {self.replay_sample_length}")
-
 			images, actions, rewards, state_init = memory.get_sample(self.replay_sample_length)
 
+			# unused
 			# state_prev = state_init
 			loss_total = 0.0
 			loss_decode = 0.0
@@ -1297,8 +1289,6 @@ class Model:
 				pass
 		
 	def load_model(self, folder_name, model_name):
-		print("LOAD MODEL", model_name.split("-"))
-
 		self.branch_id = model_name.split("-")[1]
 		self.num_epochs_init = int(model_name.split("-")[2])
 
