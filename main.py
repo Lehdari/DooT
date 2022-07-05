@@ -38,6 +38,9 @@ def parse_args():
     parser.add_argument('--replay-sample-length', type=int,
         help="how many frames are sampled from the memory each training epoch",
         default=128)
+    parser.add_argument('--smoketest-length', type=int,
+        help="length of sequences in overfitting smoketest",
+        default=32)
     parser.add_argument('--n-replay-episodes', type=int, help="",
         default=8)
     parser.add_argument('--n-training-epochs', type=int,
@@ -56,6 +59,9 @@ def parse_args():
         args.min_episode_length = args.episode_length
     if args.replay_sample_length > args.episode_length:
         args.replay_sample_length = args.episode_length
+    if not args.use_concurrent_training:
+        if args.replay_sample_length > args.smoketest_length:
+            args.replay_sample_length = args.smoketest_length
 
     return args
 
@@ -65,6 +71,7 @@ def main(args):
     runs = args.runs
     min_episode_length = args.min_episode_length # TEMP Eljas: the piece of code that uses this is commented away
     replay_sample_length = args.replay_sample_length
+    smoketest_length = args.smoketest_length
     n_replay_episodes = args.n_replay_episodes # This has something to do with the action model. currently it's not used.
     n_training_epochs = args.n_training_epochs
     window_visible = args.window_visible
@@ -108,14 +115,14 @@ def main(args):
 
 
     if not use_concurrent_training:
-        smoketest_memory_filename = f"data/smoketest/memory_{episode_length}.npz"
+        smoketest_memory_filename = f"data/smoketest/memory_{smoketest_length}.npz"
         if path.exists(smoketest_memory_filename):
             print(f"Loading {smoketest_memory_filename}")
-            memory = Memory(n_replay_episodes, episode_length)
+            memory = Memory(n_replay_episodes, smoketest_length)
             memory.load(smoketest_memory_filename)
         else:
             print(f"{smoketest_memory_filename} not found, creating new smoketest memory")
-            memory = trainer.run(model, is_smoketest=True)
+            memory = trainer.run(model, is_smoketest=True, smoketest_length=smoketest_length)
             print(f"Saving {smoketest_memory_filename}")
             memory.save(smoketest_memory_filename)
         
