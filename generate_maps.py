@@ -60,12 +60,52 @@ oblige_config_easy = {
     "stealth_gunner": "none",
 }
 
+oblige_config_validation = {
+    "length": "game",
+    "theme": "original",
+    "size": "micro",
+    "outdoors": "none",
+    "caves": "none",
+    "liquids": "none",
+    "hallways": "none",
+    "teleporters": "none",
+    "steepness": "none",
+
+    "mons": "none",
+    "strength": "easier",
+    "ramp_up": "medium",
+    "bosses": "none",
+    "traps": "none",
+    "cages": "none",
+
+    "health": "none",
+    "ammo": "none",
+    "weapons": "none",
+    "items": "none",
+    "secrets": "none",
+
+    "misc": 0,
+    # misc module options:
+    # "pistol_starts": "yes",
+    # "alt_starts": "no",
+    # "big_rooms": "none",
+    # "parks": "none",
+    # "windows": "none",
+    # "symmetry": "none",
+    # "darkness": "mixed",
+    # "mon_variety": "mixed",
+    # "barrels": "some",
+    # "doors": "none",
+    # "keys": "none",
+    # "switches": "none"
+}
+
 
 def generate_maps(filename="wads/temp/oblige.wad", seed=1507715517):
     # return
     generator = oblige.DoomLevelGenerator()
     generator.set_seed(seed)
-    generator.set_config(oblige_config_easy)
+    generator.set_config(oblige_config_validation)
     print("Generating {} ...".format(filename))
     num_maps = generator.generate(filename, verbose=False)
     print("Generated {} maps.".format(num_maps))
