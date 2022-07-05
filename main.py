@@ -18,6 +18,8 @@ faulthandler.enable()
 from os import listdir, mkdir
 from os.path import isfile, join, isdir
 import sys
+import datetime
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -35,11 +37,16 @@ def main():
     n_training_epochs = 8
     window_visible = False
     output_visual_log = False
+    quiet = False
+
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    model_output_dir = 'logs/' + current_time + '/train'
 
     reward_controller = Reward()
     model = Model(episode_length, n_replay_episodes,
         n_training_epochs, replay_sample_length,
-        output_visual_log)
+        model_output_dir,
+        output_visual_log, quiet)
 
     if model_filename is not None:
         model_dir = "model"
