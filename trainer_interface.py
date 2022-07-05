@@ -69,7 +69,9 @@ class TrainerInterface:
 		self.memory = Memory(self.n_replay_episodes, self.episode_length, discount_factor=0.98)
 
 		if is_smoketest:
+			game.close()
 			game.set_doom_scenario_path(self.smoketest_wad_path)
+			game.init()
 		else:
 			self.generate_new_maps(game)
 
