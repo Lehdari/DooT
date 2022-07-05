@@ -53,17 +53,16 @@ class TrainerInterface:
 	
 	def generate_new_maps(self, game):
 		game.close()
-		# generate_maps(seed=random.randint(0, 999999999999))
 
 		do_generate = True
 		if do_generate:
 			generate_maps(seed=1337)
+			# generate_maps(seed=random.randint(0, 999999999999))
 		else:
 			print("not generating any new maps")
 		
-		game.set_doom_scenario_path("wads/temp/oblige.wad")
+		game.set_doom_scenario_path("wads/validation/oblige.wad")
 
-		# game.set_doom_scenario_path("wads/eljas-made/e01.wad")
 		game.init()
 	
 	def run(self, model):
@@ -82,9 +81,7 @@ class TrainerInterface:
 			# if self.n_discards >= 10: # generate new maps if some of the current ones proves too difficult
 			# 	self.generate_new_maps(game)
 			
-			# game.set_doom_map(map_names[self.episode_id%self.n_replay_episodes])
-
-			game.set_doom_map("map01")
+			game.set_doom_map(map_names[self.episode_id%self.n_replay_episodes])
 			game.new_episode()
 
 			# setup automap scale
