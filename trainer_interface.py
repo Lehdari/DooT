@@ -54,9 +54,16 @@ class TrainerInterface:
 	def generate_new_maps(self, game):
 		game.close()
 		# generate_maps(seed=random.randint(0, 999999999999))
-		# game.set_doom_scenario_path("wads/temp/oblige.wad")
 
-		game.set_doom_scenario_path("wads/eljas-made/e01.wad")
+		do_generate = True
+		if do_generate:
+			generate_maps(seed=1337)
+		else:
+			print("not generating any new maps")
+		
+		game.set_doom_scenario_path("wads/temp/oblige.wad")
+
+		# game.set_doom_scenario_path("wads/eljas-made/e01.wad")
 		game.init()
 	
 	def run(self, model):
