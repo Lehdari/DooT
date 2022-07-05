@@ -1227,7 +1227,7 @@ class Model:
 			# Model name tells how many epochs it has been trained
 			# Model branch tells its "genes" or "type" or origins
 			# so different architectures can be distinguished easily
-			branch = "3fc8645"
+			branch = "e7ff39be8009"
 			num_epochs_trained += 1
 			self.save_model("model", f"model-{branch}-{num_epochs_trained}")
 
