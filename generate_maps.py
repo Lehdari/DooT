@@ -100,11 +100,16 @@ oblige_config_smoketest = {
 }
 
 
-def generate_maps(filename="wads/temp/oblige.wad", seed=1507715517):
+def generate_maps(filename="wads/temp/oblige.wad", seed=1507715517, is_smoketest=False):
     # return
     generator = oblige.DoomLevelGenerator()
     generator.set_seed(seed)
-    generator.set_config(oblige_config_smoketest)
+
+    if is_smoketest:
+        generator.set_config(oblige_config_smoketest)
+    else:
+        generator.set_config(oblige_config_easy)
+    
     print("Generating {} ...".format(filename))
     num_maps = generator.generate(filename, verbose=False)
     print("Generated {} maps.".format(num_maps))
