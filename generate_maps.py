@@ -60,7 +60,7 @@ oblige_config_easy = {
     "stealth_gunner": "none",
 }
 
-oblige_config_validation = {
+oblige_config_smoketest = {
     "length": "game",
     "theme": "original",
     "size": "micro",
@@ -104,7 +104,7 @@ def generate_maps(filename="wads/temp/oblige.wad", seed=1507715517):
     # return
     generator = oblige.DoomLevelGenerator()
     generator.set_seed(seed)
-    generator.set_config(oblige_config_validation)
+    generator.set_config(oblige_config_smoketest)
     print("Generating {} ...".format(filename))
     num_maps = generator.generate(filename, verbose=False)
     print("Generated {} maps.".format(num_maps))
