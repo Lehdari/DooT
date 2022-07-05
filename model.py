@@ -1106,19 +1106,25 @@ class Model:
 
 
 	def train(self, memory):
-		n_sequences = memory.images.shape[1]
+		print("=== train() ===")
 
-		image_encs = tf.Variable(tf.zeros((self.replay_sample_length, n_sequences,
-			self.image_enc_size)))
+		n_sequences = memory.images.shape[1]
+		print(f"n sequences: {n_sequences}")
+		# image_encs = tf.Variable(tf.zeros((self.replay_sample_length, n_sequences,
+		# 	self.image_enc_size)))
 
 		num_epochs_trained = self.num_epochs_init
+
+		print(f"{num_epochs_trained} epochs trained")
+
 		for e in range(self.n_training_epochs):
-			# compute initial states
-			# images, actions, rewards, state_init = memory.get_sample(self.replay_sample_length,
-			# 	self.model_state, self.model_image_encoder)
+			print(f"epoch {e} / {self.n_training_epochs}")
+			
+			print(f"Replay sample length: {self.replay_sample_length}")
+
 			images, actions, rewards, state_init = memory.get_sample(self.replay_sample_length)
 
-			state_prev = state_init
+			# state_prev = state_init
 			loss_total = 0.0
 			loss_decode = 0.0
 			loss_decode_gradient = 0.0
