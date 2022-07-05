@@ -1208,7 +1208,6 @@ class Model:
 
 			self.optimizer.learning_rate.assign(learning_rate(num_epochs_trained, 64, 1024, 0.01, 0.001))
 
-			###
 			# Update Tensorboard
 			with self.train_summary_writer.as_default():
 				tf.summary.scalar('loss_total', loss_total / n_iters, step=num_epochs_trained)
@@ -1227,7 +1226,8 @@ class Model:
 			# Model name tells how many epochs it has been trained
 			# Model branch tells its "genes" or "type" or origins
 			# so different architectures can be distinguished easily
-			branch = "e7ff39be8009"
+			# TODO: use git pip command
+			branch = "e7ff39b"
 			num_epochs_trained += 1
 			self.save_model("model", f"model-{branch}-{num_epochs_trained}")
 
