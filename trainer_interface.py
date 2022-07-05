@@ -25,7 +25,13 @@ class TrainerInterface:
 		self.window_visible = window_visible
 		self.n_discards = 0
 		self.replay_sample_length = replay_sample_length
-
+		self.generated_wad_path = "wads/temp/oblige.wad"
+		self.smoketest_wad_path = "wads/smoketest/oblige.wad"
+		self.map_names = ["map01", "map02", "map03", "map04", "map05",
+			"map06", "map07", "map08", "map09", "map10",
+			"map11", "map12", "map13", "map14", "map15",
+			"map16", "map17", "map18", "map19", "map20"]
+		
 	"""
 	Reset after an episode
 	"""
@@ -54,35 +60,25 @@ class TrainerInterface:
 	
 	def generate_new_maps(self, game):
 		game.close()
-
-		do_generate = True
-		if do_generate:
-			generate_maps(seed=1337)
-			# generate_maps(seed=random.randint(0, 999999999999))
-		else:
-			print("not generating any new maps")
-		
-		game.set_doom_scenario_path("wads/validation/oblige.wad")
-
+		generate_maps(seed=random.randint(0, 999999999999))		
+		game.set_doom_scenario_path(self.generated_wad_path)
 		game.init()
 	
-	def run(self, model):
+	def run(self, model, is_smoketest=False) -> Memory:
 		game = init_game(self.episode_length, self.window_visible)
-
-		map_names = ["map01", "map02", "map03", "map04", "map05",
-			"map06", "map07", "map08", "map09", "map10",
-			"map11", "map12", "map13", "map14", "map15",
-			"map16", "map17", "map18", "map19", "map20"]
-		
 		self.memory = Memory(self.n_replay_episodes, self.episode_length, discount_factor=0.98)
-		self.generate_new_maps(game)
+
+		if is_smoketest:
+			game.set_doom_scenario_path(self.smoketest_wad_path)
+		else:
+			self.generate_new_maps(game)
 
 		while True:
-			# temp foo
-			# if self.n_discards >= 10: # generate new maps if some of the current ones proves too difficult
-			# 	self.generate_new_maps(game)
+			# generate new maps if some of the current ones proves too difficult
+			if self.n_discards >= 10 and not is_smoketest:
+				self.generate_new_maps(game)
 			
-			game.set_doom_map(map_names[self.episode_id%self.n_replay_episodes])
+			game.set_doom_map(self.map_names[self.episode_id % self.n_replay_episodes])
 			game.new_episode()
 
 			# setup automap scale
@@ -109,7 +105,7 @@ class TrainerInterface:
 
 				frame_id += 1
 
-	def step(self, game, model, frame_id):
+	def step(self, game, model, frame_id) -> bool:
 		state_game = game.get_state()
 
 		automap = state_game.automap_buffer[:,:,0:1] # use the red channel, should be enough
