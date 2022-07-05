@@ -7,6 +7,7 @@ import concurrent.futures
 import gc
 
 from init_game import init_game
+from memory import Memory
 from reward import Reward
 from model import Model
 from trainer_simple import TrainerSimple
@@ -15,7 +16,7 @@ import utils
 import faulthandler
 faulthandler.enable()
 
-from os import listdir, mkdir
+from os import listdir, mkdir, path
 from os.path import isfile, join, isdir
 import sys
 import datetime
@@ -107,7 +108,17 @@ def main(args):
 
 
     if not use_concurrent_training:
-        memory = trainer.run(model)
+        smoketest_memory_filename = f"data/smoketest/memory_{episode_length}.npz"
+        if path.exists(smoketest_memory_filename):
+            print(f"Loading {smoketest_memory_filename}")
+            memory = Memory(n_replay_episodes, episode_length)
+            memory.load(smoketest_memory_filename)
+        else:
+            print(f"{smoketest_memory_filename} not found, creating new smoketest memory")
+            memory = trainer.run(model, is_smoketest=True)
+            print(f"Saving {smoketest_memory_filename}")
+            memory.save(smoketest_memory_filename)
+        
         for i in range(runs):
             print(f"Run {i} / {runs}")
             model.train(memory)
