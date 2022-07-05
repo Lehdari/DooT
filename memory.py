@@ -1,4 +1,5 @@
 import numpy as np
+from numpy_ringbuffer import RingBuffer
 import random
 import tensorflow as tf
 import os
@@ -6,19 +7,28 @@ from pathlib import Path
 
 
 class Memory:
-    def __init__(self, n_episodes, episode_length, discount_factor=0.995):
+    def __init__(self, n_episodes, episode_length, discount_factor=0.995, use_ringbuffer=False):
         self.n_episodes = n_episodes
         self.episode_length = episode_length
         self.discount_factor = discount_factor
+        self.use_ringbuffer = use_ringbuffer
         self.state_size = 512 # model internal state size
 
         self.clear()
 
 
     def clear(self):
-        self.images = np.zeros((self.episode_length, self.n_episodes, 240, 320, 5), dtype=np.uint8)
-        self.actions = np.zeros((self.episode_length, self.n_episodes, 15), dtype=np.float32)
-        self.rewards = np.zeros((self.episode_length, self.n_episodes), dtype=np.float32)
+        if self.use_ringbuffer:
+            self.images = [RingBuffer(capacity=self.episode_length, dtype=object)
+                for i in range(self.n_episodes)]
+            self.actions = [RingBuffer(capacity=self.episode_length, dtype=object)
+                for i in range(self.n_episodes)]
+            self.rewards = [RingBuffer(capacity=self.episode_length, dtype=float)
+                for i in range(self.n_episodes)]
+        else:
+            self.images = np.zeros((self.episode_length, self.n_episodes, 240, 320, 5), dtype=np.uint8)
+            self.actions = np.zeros((self.episode_length, self.n_episodes, 15), dtype=np.float32)
+            self.rewards = np.zeros((self.episode_length, self.n_episodes), dtype=np.float32)
 
         self.states = np.zeros((self.episode_length, self.n_episodes, self.state_size),
             dtype=np.float32)
@@ -28,14 +38,22 @@ class Memory:
 
 
     def store_entry(self, time_step, image, action, reward):
-        self.images[time_step, self.active_episode] = image
-        self.actions[time_step, self.active_episode] = action
-        self.rewards[time_step, self.active_episode] = reward
+        if self.use_ringbuffer:
+            self.images[self.active_episode].append(image)
+            self.actions[self.active_episode].append(action)
+            self.rewards[self.active_episode].append(reward)
 
-        # keep track of last time step for each episode due to premature termination
-        # (death or level finish)
-        self.episode_lengths[self.active_episode] =\
-            max(self.episode_lengths[self.active_episode], time_step+1)
+            self.episode_lengths[self.active_episode] =\
+                min(self.episode_length, time_step+1)
+        else:
+            self.images[time_step, self.active_episode] = image
+            self.actions[time_step, self.active_episode] = action
+            self.rewards[time_step, self.active_episode] = reward
+
+            # keep track of last time step for each episode due to premature termination
+            # (death or level finish)
+            self.episode_lengths[self.active_episode] =\
+                max(self.episode_lengths[self.active_episode], time_step+1)
     
 
     def discount_rewards(self):
@@ -54,6 +72,11 @@ class Memory:
         memory_full = self.active_episode == self.n_episodes
 
         if memory_full:
+            if self.use_ringbuffer:
+                # convert ringbuffers to tensors
+                self.images = np.transpose(np.array([np.stack(i) for i in self.images]), axes=(1,0,2,3,4))
+                self.actions = np.transpose(np.array([np.stack(i) for i in self.actions]), axes=(1,0,2))
+                self.rewards = np.transpose(np.array([np.stack(i) for i in self.rewards]), axes=(1,0))
             self.discount_rewards()
 
         return memory_full
