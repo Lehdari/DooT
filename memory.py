@@ -4,34 +4,15 @@ import tensorflow as tf
 import os
 from pathlib import Path
 
-from os import mkdir, isdir
-from os import path
 
 class Memory:
     def __init__(self, n_episodes, episode_length, discount_factor=0.995):
-        self.memory_dir = "memory"
-        if not isdir(self.memory_dir):
-            mkdir(self.memory_dir)
-        
         self.n_episodes = n_episodes
         self.episode_length = episode_length
         self.discount_factor = discount_factor
-        # self.state_size = 512 # model internal state size
+        self.state_size = 512 # model internal state size
 
         self.clear()
-
-    def save(self):
-        np.save(path.join(self.memory_dir, "images"), self.images)
-        np.save(path.join(self.memory_dir, "actions"), self.actions)
-        np.save(path.join(self.memory_dir, "rewards"), self.rewards)
-        np.save(path.join(self.memory_dir, "episode_lengths"), self.episode_lengths)
-
-    def load(self):
-        self.clear()
-        np.load(path.join(self.memory_dir, "images"), self.images)
-        np.load(path.join(self.memory_dir, "actions"), self.actions)
-        np.load(path.join(self.memory_dir, "rewards"), self.rewards)
-        np.load(path.join(self.memory_dir, "episode_lengths"), self.episode_lengths)
 
 
     def clear(self):
@@ -89,9 +70,23 @@ class Memory:
             print("Computing states... ({}/{})".format(i, end), end="\r")
 
 
+    @staticmethod
+    def rand_int_range_or_zero(x):
+        if x == 0:
+            return 0
+        else:
+            random.randint(0, x)
+
+
     def get_sample(self, length, model_state=None, model_image_encoder=None):
         # min_episode_length = np.amin(self.episode_lengths)
-        begin = np.array([random.randint(0, l-length-1) for l in self.episode_lengths])
+
+        print("== get_sample() ===")
+
+        print(f"Episode lengths: {self.episode_lengths}")
+
+        begin = np.array([Memory.rand_int_range_or_zero(l-length)
+            for l in self.episode_lengths])
         #end = begin + length
 
         if model_state is not None and model_image_encoder is not None:
