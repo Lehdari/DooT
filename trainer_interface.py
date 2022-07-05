@@ -53,8 +53,10 @@ class TrainerInterface:
 	
 	def generate_new_maps(self, game):
 		game.close()
-		generate_maps(seed=random.randint(0, 999999999999))
-		game.set_doom_scenario_path("wads/temp/oblige.wad")
+		# generate_maps(seed=random.randint(0, 999999999999))
+		# game.set_doom_scenario_path("wads/temp/oblige.wad")
+
+		game.set_doom_scenario_path("wads/eljas-made/e01.wad")
 		game.init()
 	
 	def run(self, model):
@@ -69,10 +71,13 @@ class TrainerInterface:
 		self.generate_new_maps(game)
 
 		while True:
-			if self.n_discards >= 10: # generate new maps if some of the current ones proves too difficult
-				self.generate_new_maps(game)
+			# temp foo
+			# if self.n_discards >= 10: # generate new maps if some of the current ones proves too difficult
+			# 	self.generate_new_maps(game)
 			
-			game.set_doom_map(map_names[self.episode_id%self.n_replay_episodes])
+			# game.set_doom_map(map_names[self.episode_id%self.n_replay_episodes])
+
+			game.set_doom_map("map01")
 			game.new_episode()
 
 			# setup automap scale
@@ -94,10 +99,7 @@ class TrainerInterface:
 			frame_id = 0
 			while not game.is_episode_finished():
 				if self.step(game, model, frame_id): # step returns true when memory is full
-					# cv2.destroyWindow("ViZDoom Automap")
-					# cv2.waitKey(1)
 					game.close()
-
 					return self.memory
 
 				frame_id += 1
@@ -108,9 +110,6 @@ class TrainerInterface:
 		automap = state_game.automap_buffer[:,:,0:1] # use the red channel, should be enough
 		depth = np.expand_dims(state_game.depth_buffer, axis=2)
 		screen_buf = np.concatenate([automap, state_game.screen_buffer, depth], axis=-1)
-		# if self.window_visible:
-		# 	cv2.imshow("ViZDoom Automap", automap)
-		# 	cv2.waitKey(1)
 		
 		device = "/cpu:0"
 		if self.episode_id < self.n_replay_episodes:
@@ -136,26 +135,21 @@ class TrainerInterface:
 		# update cumulative reward
 		self.reward_cum += reward
 
-		# TODO temp
-		# action_print = np.where(action>0.0, 1, 0)
-		# print("{} {:8.3f} | r: {:3.8f} e: {:2.8f}".format(
-		# 	action_print[0:14], action[14]*10.0, reward, self.epsilon), end="\r")
-		# TODO end of temp
-
 		# Save the step into the memory
 		self.memory.store_entry(self.n_entries, screen_buf, action, reward)
 		self.n_entries += 1
 
 		done = game.is_episode_finished()
 		if done:
-			print("\nEpisode {} finished, average reward: {:10.3f}"
-				.format(self.episode_id, self.reward_cum / self.n_entries))
-			
+			print(f"\nEpisode {self.episode_id} finished, average reward: {self.reward_cum / self.n_entries:10.3f} ",
+				  f"Episode length: {self.n_entries}")
+
 			# overwrite last if minimum episode length was not reached
-			if self.n_entries < self.minimum_episode_length:
-				print("Episode underlength ({}), discarding...".format(self.n_entries))
-				self.n_discards += 1
-				return False
+			# # TEMP commented away
+			# if self.n_entries < self.minimum_episode_length:
+			# 	print("Episode underlength ({}), discarding...".format(self.n_entries))
+			# 	self.n_discards += 1
+			# 	return False
 			
 			self.episode_id += 1 # don't increase episode id after discarding
 			self.n_discards = 0

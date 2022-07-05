@@ -70,6 +70,11 @@ class Memory:
 
     def get_sample(self, length, model_state=None, model_image_encoder=None):
         # min_episode_length = np.amin(self.episode_lengths)
+
+        print("== get_sample() ===")
+
+        print(f"Episode lengths: {self.episode_lengths}")
+
         begin = np.array([random.randint(0, l-length-1) for l in self.episode_lengths])
         #end = begin + length
 
