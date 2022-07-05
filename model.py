@@ -437,8 +437,8 @@ class Model:
 
 			return image_pred, depth_pred, g_model_image_encoder, g_model_image_decoder,\
 				loss_total, image_loss.loss_image,\
-				image_loss.loss_grad[0], image_loss.loss_grad[1], image_loss.loss_grad[2],\
-				image_loss.loss_grad[3], image_loss.loss_grad[4]
+				image_loss.losses_laplacian[0], image_loss.losses_laplacian[1], image_loss.losses_laplacian[2],\
+				image_loss.losses_laplacian[3], image_loss.losses_laplacian[4]
 
 		self.train_image_encoder_model = train_image_encoder_model
 		self.train_backbone_inverse = train_backbone_inverse
