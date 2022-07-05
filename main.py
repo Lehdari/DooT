@@ -98,7 +98,7 @@ def main(args):
         return
     
     trainer = TrainerSimple(reward_controller, n_replay_episodes, episode_length,
-        min_episode_length, window_visible)
+        min_episode_length, window_visible, replay_sample_length)
 
     print("Model setup complete. Starting training episodes")
 
