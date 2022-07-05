@@ -77,17 +77,25 @@ def main():
     print("Model setup complete. Starting training episodes")
 
     memory = trainer.run(model)
-    for i in range(runs):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            # start a new memory gathering run concurrently
-            memory_future = executor.submit(trainer.run, model.create_copy())
-        
-            model.train(memory)
+    max_i = 10
+    for i in range(max_i):
+        print(f"Run {i} / {max_i}")
+        model.train(memory)
 
-            # replace memory with the new one
-            del memory
-            gc.collect()
-            memory = memory_future.result()
+
+
+
+    # for i in range(runs):
+    #     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    #         # start a new memory gathering run concurrently
+    #         memory_future = executor.submit(trainer.run, model.create_copy())
+        
+    #         model.train(memory)
+
+    #         # replace memory with the new one
+    #         del memory
+    #         gc.collect()
+    #         memory = memory_future.result()
 
 print()
 print("-------- starting ------------")
