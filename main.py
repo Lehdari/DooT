@@ -20,7 +20,7 @@ from os.path import isfile, join, isdir
 import sys
 import datetime
 
-def main():
+def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--model', type=str, help="model name in directory models/", default="model")
@@ -53,6 +53,9 @@ def main():
     args = parser.parse_args()
     # Assume that the args are correct without validating them
 
+    return args
+
+def main(args):
     model_filename = args.model
     episode_length = args.episode_length
     runs = args.runs
@@ -118,7 +121,11 @@ def main():
                 gc.collect()
                 memory = memory_future.result()
 
-print()
-print("-------- starting ------------")
-main()
-sys.exit(0)
+
+if __name__=="__main__":
+    args=parse_args()
+
+    print()
+    print("-------- starting ------------")
+    main(args)
+    sys.exit(0)
