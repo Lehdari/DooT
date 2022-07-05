@@ -64,15 +64,16 @@ class TrainerInterface:
 		game.set_doom_scenario_path(self.generated_wad_path)
 		game.init()
 	
-	def run(self, model, is_smoketest=False) -> Memory:
+	def run(self, model, is_smoketest=False, smoketest_length=32) -> Memory:
 		game = init_game(self.episode_length, self.window_visible)
-		self.memory = Memory(self.n_replay_episodes, self.episode_length, discount_factor=0.98)
 
 		if is_smoketest:
+			self.memory = Memory(self.n_replay_episodes, smoketest_length, use_ringbuffer=True)
 			game.close()
 			game.set_doom_scenario_path(self.smoketest_wad_path)
 			game.init()
 		else:
+			self.memory = Memory(self.n_replay_episodes, self.episode_length, discount_factor=0.98)
 			self.generate_new_maps(game)
 
 		while True:
