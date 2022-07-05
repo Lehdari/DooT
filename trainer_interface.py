@@ -14,8 +14,8 @@ import cv2
 
 
 class TrainerInterface:
-	def __init__(self, reward, n_episodes, episode_length, minimum_episode_length,
-		window_visible):
+	def __init__(self, reward: Reward, n_episodes: int, episode_length: int, minimum_episode_length: int,
+		window_visible: bool, replay_sample_length: int):
 		self.reward = reward
 
 		self.episode_id = 0
@@ -24,6 +24,7 @@ class TrainerInterface:
 		self.minimum_episode_length = minimum_episode_length
 		self.window_visible = window_visible
 		self.n_discards = 0
+		self.replay_sample_length = replay_sample_length
 
 	"""
 	Reset after an episode
@@ -155,7 +156,7 @@ class TrainerInterface:
 			# 	self.n_discards += 1
 			# 	return False
 
-			if self.n_entries < 128: #todo: use replay_sample_length. jos et tee, oot pelle.
+			if self.n_entries < self.replay_sample_length:
 				print("Episode was too short")
 				self.n_discards +=1
 				return False
