@@ -1173,7 +1173,10 @@ class Model:
 				loss_mask = tf.cast(tf.where(images[i][:,:,:,4:5] > 0.001,
 					tf.ones_like(images[i][:,:,:,4:5]),
 					tf.zeros_like(images[i][:,:,:,4:5])), tf.float32)
-				image_loss = ImageLoss(image, image_pred_stacked, loss_mask)
+
+				# Unused at the moment	
+				# if not self.quiet:
+				# 	image_loss = ImageLoss(image, image_pred_stacked, loss_mask)
 
 				if not self.quiet:
 					show_frame_comparison(
