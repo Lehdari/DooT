@@ -15,6 +15,9 @@ import utils
 import faulthandler
 faulthandler.enable()
 
+from os import listdir, mkdir
+from os.path import isfile, join, isdir
+import sys
 
 def main():
     parser = argparse.ArgumentParser()
@@ -28,18 +31,10 @@ def main():
     episode_length = 4096
     min_episode_length = 2048
     replay_sample_length = 128
-    # episode_length = 128
-    # min_episode_length = 128
-    # replay_sample_length = 96
     n_replay_episodes = 8
     n_training_epochs = 8
     window_visible = False
     output_visual_log = False
-
-    # game.new_episode()
-
-    # player_start_pos = utils.get_player_pos(game)
-    # print("Player start pos:", player_start_pos)
 
     reward_controller = Reward()
     model = Model(episode_length, n_replay_episodes,
@@ -47,18 +42,24 @@ def main():
         output_visual_log)
 
     if model_filename is not None:
-        from os import listdir
-        from os.path import isfile, join
-        h5files = [f for f in listdir(model_filename) if isfile(join(model_filename, f))]
-        h5files = [f for f in h5files if ".h5" in f]
-        h5files = [f.split("_")[0] for f in h5files]
-        h5files = [f for f in h5files if "-" in f]
-
-        print("h5files:", h5files)
-        if h5files:
-            model.load_model(model_filename, h5files[0])
+        model_dir = "model"
+        if isdir(model_dir):
+            print(f"Found directory {model_dir}")
+            print("Searching saved neural network models")
+            h5files = [f for f in listdir(model_filename) if isfile(join(model_filename, f))]
+            h5files = [f for f in h5files if ".h5" in f]
+            h5files = [f.split("_")[0] for f in h5files]
+            h5files = [f for f in h5files if "-" in f]
+            if h5files:
+                model.load_model(model_filename, h5files[0])
+            else:
+                print(f"Model with name {model_filename} not found in {model_dir}, creating new model")
         else:
-            print(f"Model with name {model_filename} not found, creating new model...")
+            print(f"Did not find directory {model_dir}. Creating the directory and creating a new model")
+            mkdir(model_dir)
+    
+
+
     trainer = TrainerSimple(reward_controller, n_replay_episodes, episode_length,
         min_episode_length, window_visible)
 
