@@ -84,20 +84,19 @@ oblige_config_validation = {
     "items": "none",
     "secrets": "none",
 
-    "misc": 0,
-    # misc module options:
-    # "pistol_starts": "yes",
-    # "alt_starts": "no",
-    # "big_rooms": "none",
-    # "parks": "none",
-    # "windows": "none",
-    # "symmetry": "none",
-    # "darkness": "mixed",
-    # "mon_variety": "mixed",
-    # "barrels": "some",
-    # "doors": "none",
-    # "keys": "none",
-    # "switches": "none"
+    "misc": 1,
+    "pistol_starts": "yes",
+    "alt_starts": "no",
+    "big_rooms": "none",
+    "parks": "none",
+    "windows": "none",
+    "symmetry": "none",
+    "darkness": "none",
+    "mon_variety": "none",
+    "barrels": "none",
+    "doors": "none",
+    "keys": "none",
+    "switches": "none"
 }
 
 
