@@ -154,7 +154,7 @@ class ActionModel:
 
 class Model:
 	def __init__(self, episode_length, n_replay_episodes, n_training_epochs, replay_sample_length,
-		output_visual_log=False):
+		output_visual_log=False, quiet=False):
 		self.initializer = initializers.RandomNormal(stddev=0.03)
 		self.beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.0)
 		self.gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.0)
@@ -206,6 +206,7 @@ class Model:
 		###
 
 		self.num_epochs_init = 0
+		self.quiet = quiet # suppress logging and rendering during training
 		
 	
 	def save_episode_state_images(self, episode_id):
@@ -1155,13 +1156,14 @@ class Model:
 				loss_decode_gradient8 += loss_decode_gradient8_tf.numpy()
 				loss_decode_gradient16 += loss_decode_gradient16_tf.numpy()
 
-				print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_d: {:8.5f} l_dg: {:8.5f} {:8.5f} {:8.5f} {:8.5f} {:8.5f}".format(
-					e, i, self.replay_sample_length,
-					loss_total/(i+1), loss_decode/(i+1),
-					loss_decode_gradient/(i+1), loss_decode_gradient2/(i+1),
-					loss_decode_gradient4/(i+1), loss_decode_gradient8/(i+1),
-					loss_decode_gradient16/(i+1)),
-					end="\r")
+				if not self.quiet:
+					print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_d: {:8.5f} l_dg: {:8.5f} {:8.5f} {:8.5f} {:8.5f} {:8.5f}".format(
+						e, i, self.replay_sample_length,
+						loss_total/(i+1), loss_decode/(i+1),
+						loss_decode_gradient/(i+1), loss_decode_gradient2/(i+1),
+						loss_decode_gradient4/(i+1), loss_decode_gradient8/(i+1),
+						loss_decode_gradient16/(i+1)),
+						end="\r")
 				
 				if g_model_image_encoder is None:
 					g_model_image_encoder = gi_model_image_encoder
@@ -1180,59 +1182,23 @@ class Model:
 					tf.zeros_like(images[i][:,:,:,4:5])), tf.float32)
 				image_loss = ImageLoss(image, image_pred_stacked, loss_mask)
 
-				show_frame_comparison(
-					image[e%self.n_replay_episodes,:,:,0:3],
-					image_pred_stacked[e%self.n_replay_episodes,:,:,0:3],
-					"rgb"
-				)
+				if not self.quiet:
+					show_frame_comparison(
+						image[e%self.n_replay_episodes,:,:,0:3],
+						image_pred_stacked[e%self.n_replay_episodes,:,:,0:3],
+						"rgb"
+					)
 
-				show_frame_comparison(
-					image[e%self.n_replay_episodes,:,:,3:4],
-					image_pred_stacked[e%self.n_replay_episodes,:,:,3:4],
-					"depth"
-				)
+					show_frame_comparison(
+						image[e%self.n_replay_episodes,:,:,3:4],
+						image_pred_stacked[e%self.n_replay_episodes,:,:,3:4],
+						"depth"
+					)
 
-				# show_frame_comparison(
-				# 	image_loss.loss_masks[0][e%self.n_replay_episodes,:,:,:],
-				# 	image_loss.loss_masks[0][e%self.n_replay_episodes,:,:,:],
-				# 	"loss mask"
-				# )
+					cv2.waitKey(1)
 
-				# for i in range(len(image_loss.grad_x)):
-				# 	show_frame_comparison(
-				# 		0.5+image_loss.grad_x[i][e%self.n_replay_episodes,:,:,0:3],
-				# 		0.5+image_loss.grad_x_pred[i][e%self.n_replay_episodes,:,:,0:3],
-				# 		f"x_grad{2**i}"
-				# 	)
-				# 	show_frame_comparison(
-				# 		0.5+image_loss.grad_y[i][e%self.n_replay_episodes,:,:,0:3],
-				# 		0.5+image_loss.grad_y_pred[i][e%self.n_replay_episodes,:,:,0:3],
-				# 		f"y_grad{2**i}"
-				# 	)
-				# 	show_frame_comparison(
-				# 		0.5+image_loss.grad_x[i][e%self.n_replay_episodes,:,:,3:4],
-				# 		0.5+image_loss.grad_x_pred[i][e%self.n_replay_episodes,:,:,3:4],
-				# 		f"x_grad_depth{2**i}"
-				# 	)
-				# 	show_frame_comparison(
-				# 		0.5+image_loss.grad_y[i][e%self.n_replay_episodes,:,:,3:4],
-				# 		0.5+image_loss.grad_y_pred[i][e%self.n_replay_episodes,:,:,3:4],
-				# 		f"y_grad_depth{2**i}"
-				# 	)
-				# 	show_frame_comparison(
-				# 		image_loss.grad_x_mask[i][e%self.n_replay_episodes,:,:,:],
-				# 		image_loss.grad_x_mask[i][e%self.n_replay_episodes,:,:,:],
-				# 		f"x_grad_mask{2**i}"
-				# 	)
-				# 	show_frame_comparison(
-				# 		image_loss.grad_y_mask[i][e%self.n_replay_episodes,:,:,:],
-				# 		image_loss.grad_y_mask[i][e%self.n_replay_episodes,:,:,:],
-				# 		f"y_grad_mask{2**i}"
-				# 	)
-
-
-				cv2.waitKey(1)
-			print("")
+			if not self.quiet:
+				print("")
 
 			self.optimizer.learning_rate.assign(learning_rate(num_epochs_trained, 64, 1024, 0.01, 0.001))
 
@@ -1307,13 +1273,13 @@ class Model:
 		print("Saving model with prefix: {}/{}".format(folder_name, model_name))
 		self.model_image_encoder.save_weights("{}/{}_image_encoder.h5".format(folder_name, model_name))
 		self.model_image_decoder.save_weights("{}/{}_image_decoder.h5".format(folder_name, model_name))
-		self.model_state.save_weights("{}/{}_state.h5".format(folder_name, model_name))
-		for i in range(self.n_replay_episodes):
-			self.models_action[i].save("{}/{}_action_{}.h5".format(folder_name, model_name, i))
-		self.model_reward.save_weights("{}/{}_reward.h5".format(folder_name, model_name))
-		self.model_forward.save_weights("{}/{}_forward.h5".format(folder_name, model_name))
-		self.model_inverse.save_weights("{}/{}_inverse.h5".format(folder_name, model_name))
-		self.model_inverse_backbone.save_weights("{}/{}_inverse_backbone.h5".format(folder_name, model_name))
+		# self.model_state.save_weights("{}/{}_state.h5".format(folder_name, model_name))
+		# for i in range(self.n_replay_episodes):
+		# 	self.models_action[i].save("{}/{}_action_{}.h5".format(folder_name, model_name, i))
+		# self.model_reward.save_weights("{}/{}_reward.h5".format(folder_name, model_name))
+		# self.model_forward.save_weights("{}/{}_forward.h5".format(folder_name, model_name))
+		# self.model_inverse.save_weights("{}/{}_inverse.h5".format(folder_name, model_name))
+		# self.model_inverse_backbone.save_weights("{}/{}_inverse_backbone.h5".format(folder_name, model_name))
 	
 	def load_with_backup(self, model, filename, backup_filename):
 		try:
@@ -1338,26 +1304,26 @@ class Model:
 		self.load_with_backup(self.model_image_decoder,
 			"{}/{}_image_decoder.h5".format(folder_name, model_name),
 			"{}_backup/{}_image_decoder.h5".format(folder_name, model_name))
-		self.load_with_backup(self.model_state,
-			"{}/{}_state.h5".format(folder_name, model_name),
-			"{}_backup/{}_state.h5".format(folder_name, model_name))
-		self.load_with_backup(self.model_reward,
-			"{}/{}_reward.h5".format(folder_name, model_name),
-			"{}_backup/{}_reward.h5".format(folder_name, model_name))
-		self.load_with_backup(self.model_forward,
-			"{}/{}_forward.h5".format(folder_name, model_name),
-			"{}_backup/{}_forward.h5".format(folder_name, model_name))
-		self.load_with_backup(self.model_inverse,
-			"{}/{}_inverse.h5".format(folder_name, model_name),
-			"{}_backup/{}_inverse.h5".format(folder_name, model_name))
-		self.load_with_backup(self.model_inverse_backbone,
-			"{}/{}_inverse_backbone.h5".format(folder_name, model_name),
-			"{}_backup/{}_inverse_backbone.h5".format(folder_name, model_name))
+		# self.load_with_backup(self.model_state,
+		# 	"{}/{}_state.h5".format(folder_name, model_name),
+		# 	"{}_backup/{}_state.h5".format(folder_name, model_name))
+		# self.load_with_backup(self.model_reward,
+		# 	"{}/{}_reward.h5".format(folder_name, model_name),
+		# 	"{}_backup/{}_reward.h5".format(folder_name, model_name))
+		# self.load_with_backup(self.model_forward,
+		# 	"{}/{}_forward.h5".format(folder_name, model_name),
+		# 	"{}_backup/{}_forward.h5".format(folder_name, model_name))
+		# self.load_with_backup(self.model_inverse,
+		# 	"{}/{}_inverse.h5".format(folder_name, model_name),
+		# 	"{}_backup/{}_inverse.h5".format(folder_name, model_name))
+		# self.load_with_backup(self.model_inverse_backbone,
+		# 	"{}/{}_inverse_backbone.h5".format(folder_name, model_name),
+		# 	"{}_backup/{}_inverse_backbone.h5".format(folder_name, model_name))
 
-		for i in range(self.n_replay_episodes):
-			self.load_with_backup(self.models_action[i].model_action,
-				"{}/{}_action_{}.h5".format(folder_name, model_name, i),
-				"{}_backup/{}_action_{}.h5".format(folder_name, model_name, i))
+		# for i in range(self.n_replay_episodes):
+		# 	self.load_with_backup(self.models_action[i].model_action,
+		# 		"{}/{}_action_{}.h5".format(folder_name, model_name, i),
+		# 		"{}_backup/{}_action_{}.h5".format(folder_name, model_name, i))
 	
 	def create_copy(self):
 		model_copy = Model(
