@@ -98,3 +98,10 @@ class Memory:
             tf.convert_to_tensor(actions_slice),
             tf.convert_to_tensor(rewards_slice),
             tf.convert_to_tensor(state))
+
+
+    def save(self):
+        pass
+
+    def load(self):
+        pass
