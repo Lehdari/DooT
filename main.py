@@ -51,7 +51,10 @@ def parse_args():
         help="collect and save image flats, image encs, image enc preds and states to out/", default=False)
 
     args = parser.parse_args()
-    # Assume that the args are correct without validating them
+    if args.min_episode_length > args.episode_length:
+        args.min_episode_length = args.episode_length
+    if args.replay_sample_length > args.episode_length:
+        args.replay_sample_length = args.episode_length
 
     return args
 
