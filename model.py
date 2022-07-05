@@ -1141,6 +1141,7 @@ class Model:
 			loss_decode_gradient16 = 0.0
 			g_model_image_encoder = None
 			g_model_image_decoder = None
+			n_iters = 1
 			for i in range(self.replay_sample_length):
 				image_pred, depth_pred, gi_model_image_encoder, gi_model_image_decoder,\
 					loss_total_tf, loss_decode_tf,\
@@ -1159,10 +1160,10 @@ class Model:
 				if not self.quiet:
 					print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_d: {:8.5f} l_dg: {:8.5f} {:8.5f} {:8.5f} {:8.5f} {:8.5f}".format(
 						e, i, self.replay_sample_length,
-						loss_total/(i+1), loss_decode/(i+1),
-						loss_decode_gradient/(i+1), loss_decode_gradient2/(i+1),
-						loss_decode_gradient4/(i+1), loss_decode_gradient8/(i+1),
-						loss_decode_gradient16/(i+1)),
+						loss_total/n_iters, loss_decode/n_iters,
+						loss_decode_gradient/n_iters, loss_decode_gradient2/n_iters,
+						loss_decode_gradient4/n_iters, loss_decode_gradient8/n_iters,
+						loss_decode_gradient16/n_iters),
 						end="\r")
 				
 				if g_model_image_encoder is None:
@@ -1199,6 +1200,8 @@ class Model:
 					)
 
 					cv2.waitKey(1)
+				
+				n_iters += 1
 
 			if not self.quiet:
 				print("")
@@ -1208,14 +1211,13 @@ class Model:
 			###
 			# Update Tensorboard
 			with self.train_summary_writer.as_default():
-				tf.summary.scalar('loss_total', loss_total, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode', loss_decode, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode_gradient', loss_decode_gradient, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode_gradient2', loss_decode_gradient2, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode_gradient4', loss_decode_gradient4, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode_gradient8', loss_decode_gradient8, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode_gradient16', loss_decode_gradient16, step=num_epochs_trained)
-				tf.summary.scalar('learning_rate', self.optimizer.learning_rate, step=num_epochs_trained)
+				tf.summary.scalar('loss_total', loss_total / n_iters, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode', loss_decode / n_iters, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode_gradient', loss_decode_gradient / n_iters, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode_gradient2', loss_decode_gradient2 / n_iters, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode_gradient4', loss_decode_gradient4 / n_iters, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode_gradient8', loss_decode_gradient8 / n_iters, step=num_epochs_trained)
+				tf.summary.scalar('loss_decode_gradient16', loss_decode_gradient16 / n_iters, step=num_epochs_trained)
 
 			self.optimizer.apply_gradients(zip(g_model_image_encoder,
 				self.model_image_encoder.trainable_variables))
