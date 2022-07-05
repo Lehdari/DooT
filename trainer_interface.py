@@ -150,7 +150,12 @@ class TrainerInterface:
 			# 	print("Episode underlength ({}), discarding...".format(self.n_entries))
 			# 	self.n_discards += 1
 			# 	return False
-			
+
+			if self.n_entries < 128: #todo: use replay_sample_length. jos et tee, oot pelle.
+				print("Episode was too short")
+				self.n_discards +=1
+				return False
+
 			self.episode_id += 1 # don't increase episode id after discarding
 			self.n_discards = 0
 
