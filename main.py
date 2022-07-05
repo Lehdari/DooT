@@ -57,9 +57,10 @@ def main():
         else:
             print(f"Did not find directory {model_dir}. Creating the directory and creating a new model")
             mkdir(model_dir)
+    else:
+        print("Model filename not specified. Exiting.")
+        return
     
-
-
     trainer = TrainerSimple(reward_controller, n_replay_episodes, episode_length,
         min_episode_length, window_visible)
 
