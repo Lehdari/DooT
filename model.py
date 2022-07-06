@@ -165,7 +165,7 @@ class Model:
 		self.loss_function = keras.losses.MeanSquaredError()
 
 		self.state_size = 512
-		self.image_enc_size = 15*20*8
+		self.image_enc_size = 120*160*4
 		self.tbptt_length_encoder = 8
 		self.tbptt_length_backbone = 64
 		self.tbptt_length_action = 16
@@ -181,11 +181,11 @@ class Model:
 		self.create_image_encoder_model(feature_multiplier=2)
 		self.create_image_decoder_model(feature_multiplier=2)
 
-		self.create_state_model()
-		self.create_reward_model()
-		self.create_forward_model()
-		self.create_inverse_models()
-		self.create_action_models()
+		# self.create_state_model()
+		# self.create_reward_model()
+		# self.create_forward_model()
+		# self.create_inverse_models()
+		# self.create_action_models()
 
 		self.define_training_functions()
 
@@ -427,7 +427,7 @@ class Model:
 					tf.zeros_like(images[i][:,:,:,4:5])), tf.float32)
 				image_loss = ImageLoss(image_combined, image_combined_pred,
 					loss_mask,
-					depth_weight=10.0)
+					depth_weight=0.0)
 				loss_total = image_loss.total_loss()
 
 			g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
@@ -759,85 +759,96 @@ class Model:
 		self.model_image_encoder_i_image = keras.Input(shape=(240, 320, 3))
 		self.model_image_encoder_i_automap = keras.Input(shape=(240, 320, 1))
 
-		# camera branch
-		x = self.model_image_encoder_i_image
-		e = self.create_positional_embedding((240,320), 9)
-		x = layers.Concatenate()([x, tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])])
-		x = self.module_conv(x, 16*feature_multiplier, 16*feature_multiplier, activation="tanh") #160x120
-		x = self.module_conv(x, 32*feature_multiplier, 32*feature_multiplier, activation="tanh") #80x60
-		x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier, activation="tanh") #40x30
-		x = self.module_conv(x, 128*feature_multiplier, 128*feature_multiplier, activation="tanh") #20x15
+		# # camera branch
+		# x = self.model_image_encoder_i_image
+		# e = self.create_positional_embedding((240,320), 9)
+		# x = layers.Concatenate()([x, tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])])
+		# x = self.module_conv(x, 16*feature_multiplier, 16*feature_multiplier, activation="tanh") #160x120
+		# x = self.module_conv(x, 32*feature_multiplier, 32*feature_multiplier, activation="tanh") #80x60
+		# x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier, activation="tanh") #40x30
+		# x = self.module_conv(x, 128*feature_multiplier, 128*feature_multiplier, activation="tanh") #20x15
 		
-		z = self.module_conv(x, 64*feature_multiplier, 32*feature_multiplier,
-			k1=(1,1), s1=(1,1), k2=(1,1), s2=(1,1), p1="valid", p2="valid", activation="tanh") #20x15
-		z = self.module_conv(x, 32*feature_multiplier, 16*feature_multiplier,
-			k1=(5,5), s1=(1,1), k2=(5,5), s2=(1,1), p1="valid", p2="valid", activation="tanh") #12x7
-		z = self.module_conv(z, 32*feature_multiplier, 64*feature_multiplier,
-			k1=(5,5), s1=(1,1), k2=(3,1), s2=(1,1), p1="valid", p2="valid", activation="tanh") #8x1
-		z2 = layers.Reshape((8*64*feature_multiplier,1))(z)
-		z2 = layers.AveragePooling1D(pool_size=4)(z2)
-		z2 = layers.Flatten()(z2)
-		z = layers.Flatten()(z)
-		z = layers.Dense(128*feature_multiplier, use_bias=False,
-			kernel_initializer=initializers.Orthogonal())(z)
-		z = layers.BatchNormalization(axis=-1,
-			beta_initializer = self.beta_initializer,
-			gamma_initializer = self.gamma_initializer)(z)
-		z = layers.Activation(activations.tanh)(z)
-		z = layers.Dense(128*feature_multiplier, use_bias=False,
-			kernel_initializer=initializers.Orthogonal())(z)
-		z = layers.BatchNormalization(axis=-1,
-			beta_initializer = self.beta_initializer,
-			gamma_initializer = self.gamma_initializer)(z)
-		z = layers.Activation(activations.tanh)(z)
-		z = layers.Add()([z, z2])
+		# z = self.module_conv(x, 64*feature_multiplier, 32*feature_multiplier,
+		# 	k1=(1,1), s1=(1,1), k2=(1,1), s2=(1,1), p1="valid", p2="valid", activation="tanh") #20x15
+		# z = self.module_conv(x, 32*feature_multiplier, 16*feature_multiplier,
+		# 	k1=(5,5), s1=(1,1), k2=(5,5), s2=(1,1), p1="valid", p2="valid", activation="tanh") #12x7
+		# z = self.module_conv(z, 32*feature_multiplier, 64*feature_multiplier,
+		# 	k1=(5,5), s1=(1,1), k2=(3,1), s2=(1,1), p1="valid", p2="valid", activation="tanh") #8x1
+		# z2 = layers.Reshape((8*64*feature_multiplier,1))(z)
+		# z2 = layers.AveragePooling1D(pool_size=4)(z2)
+		# z2 = layers.Flatten()(z2)
+		# z = layers.Flatten()(z)
+		# z = layers.Dense(128*feature_multiplier, use_bias=False,
+		# 	kernel_initializer=initializers.Orthogonal())(z)
+		# z = layers.BatchNormalization(axis=-1,
+		# 	beta_initializer = self.beta_initializer,
+		# 	gamma_initializer = self.gamma_initializer)(z)
+		# z = layers.Activation(activations.tanh)(z)
+		# z = layers.Dense(128*feature_multiplier, use_bias=False,
+		# 	kernel_initializer=initializers.Orthogonal())(z)
+		# z = layers.BatchNormalization(axis=-1,
+		# 	beta_initializer = self.beta_initializer,
+		# 	gamma_initializer = self.gamma_initializer)(z)
+		# z = layers.Activation(activations.tanh)(z)
+		# z = layers.Add()([z, z2])
 
-		x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier,
-			k1=(3,3), s1=(1,1), k2=(3,3), s2=(1,1), activation="tanh") #20x15
+		# x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier,
+		# 	k1=(3,3), s1=(1,1), k2=(3,3), s2=(1,1), activation="tanh") #20x15
 
-		# automap branch
-		y = self.model_image_encoder_i_automap
-		e = self.create_positional_embedding((240,320), 9)
-		y = layers.Concatenate()([y, tf.broadcast_to(e, [tf.shape(y)[0], *e.shape])])
-		y = self.module_conv(y, 4*feature_multiplier, 4*feature_multiplier, activation="tanh") #160x120
-		y = self.module_conv(y, 8*feature_multiplier, 8*feature_multiplier, activation="tanh") #80x60
-		y = self.module_conv(y, 16*feature_multiplier, 16*feature_multiplier, activation="tanh") #40x30
-		y = self.module_conv(y, 32*feature_multiplier, 32*feature_multiplier, activation="tanh") #20x15
-		y = self.module_conv(y, 32*feature_multiplier, 32*feature_multiplier,
-			k1=(5,5), s1=(1,1), k2=(5,5), s2=(1,1), p1="valid", p2="valid", activation="tanh") #12x7
-		y = self.module_conv(y, 32*feature_multiplier, 64*feature_multiplier,
-			k1=(5,5), s1=(1,1), k2=(3,1), s2=(1,1), p1="valid", p2="valid", activation="tanh") #8x1
-		y2 = layers.Reshape((8*64*feature_multiplier,1))(y)
-		y2 = layers.AveragePooling1D(pool_size=4)(y2)
-		y2 = layers.Flatten()(y2)
-		y = layers.Flatten()(y)
-		y = layers.Dense(128*feature_multiplier, use_bias=False,
-			kernel_initializer=initializers.Orthogonal())(y)
-		y = layers.BatchNormalization(axis=-1,
-			beta_initializer = self.beta_initializer,
-			gamma_initializer = self.gamma_initializer)(y)
-		y = layers.Activation(activations.tanh)(y)
-		y = layers.Add()([y, y2])
+		# # automap branch
+		# y = self.model_image_encoder_i_automap
+		# e = self.create_positional_embedding((240,320), 9)
+		# y = layers.Concatenate()([y, tf.broadcast_to(e, [tf.shape(y)[0], *e.shape])])
+		# y = self.module_conv(y, 4*feature_multiplier, 4*feature_multiplier, activation="tanh") #160x120
+		# y = self.module_conv(y, 8*feature_multiplier, 8*feature_multiplier, activation="tanh") #80x60
+		# y = self.module_conv(y, 16*feature_multiplier, 16*feature_multiplier, activation="tanh") #40x30
+		# y = self.module_conv(y, 32*feature_multiplier, 32*feature_multiplier, activation="tanh") #20x15
+		# y = self.module_conv(y, 32*feature_multiplier, 32*feature_multiplier,
+		# 	k1=(5,5), s1=(1,1), k2=(5,5), s2=(1,1), p1="valid", p2="valid", activation="tanh") #12x7
+		# y = self.module_conv(y, 32*feature_multiplier, 64*feature_multiplier,
+		# 	k1=(5,5), s1=(1,1), k2=(3,1), s2=(1,1), p1="valid", p2="valid", activation="tanh") #8x1
+		# y2 = layers.Reshape((8*64*feature_multiplier,1))(y)
+		# y2 = layers.AveragePooling1D(pool_size=4)(y2)
+		# y2 = layers.Flatten()(y2)
+		# y = layers.Flatten()(y)
+		# y = layers.Dense(128*feature_multiplier, use_bias=False,
+		# 	kernel_initializer=initializers.Orthogonal())(y)
+		# y = layers.BatchNormalization(axis=-1,
+		# 	beta_initializer = self.beta_initializer,
+		# 	gamma_initializer = self.gamma_initializer)(y)
+		# y = layers.Activation(activations.tanh)(y)
+		# y = layers.Add()([y, y2])
 
-		# full context fusion of image and automap branches
-		w = self.module_fusion(y, z, 1200*feature_multiplier, activation="linear")
-		w = layers.Reshape((15,20,-1))(w)
+		# # full context fusion of image and automap branches
+		# w = self.module_fusion(y, z, 1200*feature_multiplier, activation="linear")
+		# w = layers.Reshape((15,20,-1))(w)
 
-		# distributed context vector
-		y = self.module_fusion(y, z, 32*feature_multiplier, activation="tanh")
-		y = layers.Reshape((1,1,-1))(y)
-		y = layers.UpSampling2D((15,20))(y)
+		# # distributed context vector
+		# y = self.module_fusion(y, z, 32*feature_multiplier, activation="tanh")
+		# y = layers.Reshape((1,1,-1))(y)
+		# y = layers.UpSampling2D((15,20))(y)
 
-		# merge with image output branch, introduce positional embedding
-		e = self.create_positional_embedding((15,20), 5)
-		e = tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])
-		x = layers.Concatenate()([x, y, w, e])
-		x = self.module_conv(x, 64*feature_multiplier, 32*feature_multiplier,
-			k1=(1,1), s1=(1,1), k2=(1,1), s2=(1,1), activation="tanh")
+		# # merge with image output branch, introduce positional embedding
+		# e = self.create_positional_embedding((15,20), 5)
+		# e = tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])
+		# x = layers.Concatenate()([x, y, w, e])
+		# x = self.module_conv(x, 64*feature_multiplier, 32*feature_multiplier,
+		# 	k1=(1,1), s1=(1,1), k2=(1,1), s2=(1,1), activation="tanh")
 
-		x = layers.Conv2D(8, (1,1),
+		# x = layers.Conv2D(8, (1,1),
+		# 	kernel_initializer=self.initializer,
+		# 	activity_regularizer=L2Regularizer(0.001))(x)
+		# self.model_image_encoder_o_image_enc = layers.Flatten()(x)
+
+
+		x = layers.Concatenate()([self.model_image_encoder_i_image, self.model_image_encoder_i_automap])
+
+		x = self.module_conv(x, 4, 4, k1=(2,2), k2=(2,2))
+
+		x = layers.Conv2D(4, (1,1),
 			kernel_initializer=self.initializer,
-			activity_regularizer=L2Regularizer(0.001))(x)
+			activity_regularizer=L2Regularizer(1.0e-6))(x)
+
 		self.model_image_encoder_o_image_enc = layers.Flatten()(x)
 
 		self.model_image_encoder = keras.Model(
@@ -853,45 +864,66 @@ class Model:
 	def create_image_decoder_model(self, feature_multiplier=1):
 		self.model_image_decoder_i_image_enc = keras.Input(shape=(self.image_enc_size))
 
-		x = layers.Reshape((15, 20, -1))(self.model_image_decoder_i_image_enc)
-		e = self.create_positional_embedding((15,20), 5)
-		x = layers.Concatenate()([x, tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])])
+		# x = layers.Reshape((15, 20, -1))(self.model_image_decoder_i_image_enc)
+		# e = self.create_positional_embedding((15,20), 5)
+		# x = layers.Concatenate()([x, tf.broadcast_to(e, [tf.shape(x)[0], *e.shape])])
 
-		s = self.module_interpolated_sin(x, n=8, upscale_ratio=2)
-		x = self.module_deconv(x, 128*feature_multiplier, 128*feature_multiplier,
-			k1=(4,4), k2=(2,2), activation="tanh") #40x30
-		x = layers.Concatenate()([x, s])
-		x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier,
-			k1=(4,4), k2=(4,4), s1=(1,1), s2=(1,1), activation="tanh")
+		# s = self.module_interpolated_sin(x, n=8, upscale_ratio=2)
+		# x = self.module_deconv(x, 128*feature_multiplier, 128*feature_multiplier,
+		# 	k1=(4,4), k2=(2,2), activation="tanh") #40x30
+		# x = layers.Concatenate()([x, s])
+		# x = self.module_conv(x, 64*feature_multiplier, 64*feature_multiplier,
+		# 	k1=(4,4), k2=(4,4), s1=(1,1), s2=(1,1), activation="tanh")
 
-		s = self.module_interpolated_sin(x, n=8, upscale_ratio=2)
-		x = self.module_deconv(x, 64*feature_multiplier, 64*feature_multiplier,
-			k1=(4,4), k2=(2,2), activation="tanh") #80x60
-		x = layers.Concatenate()([x, s])
-		x = self.module_conv(x, 32*feature_multiplier, 32*feature_multiplier,
-			k1=(4,4), k2=(4,4), s1=(1,1), s2=(1,1), activation="tanh")
+		# s = self.module_interpolated_sin(x, n=8, upscale_ratio=2)
+		# x = self.module_deconv(x, 64*feature_multiplier, 64*feature_multiplier,
+		# 	k1=(4,4), k2=(2,2), activation="tanh") #80x60
+		# x = layers.Concatenate()([x, s])
+		# x = self.module_conv(x, 32*feature_multiplier, 32*feature_multiplier,
+		# 	k1=(4,4), k2=(4,4), s1=(1,1), s2=(1,1), activation="tanh")
 
-		s = self.module_interpolated_sin(x, n=8, upscale_ratio=2)
-		x = self.module_deconv(x, 32*feature_multiplier, 32*feature_multiplier,
-			k1=(4,4), k2=(2,2), activation="tanh") #160x120
-		x = layers.Concatenate()([x, s])
-		x = self.module_conv(x, 16*feature_multiplier, 16*feature_multiplier,
-			k1=(4,4), k2=(4,4), s1=(1,1), s2=(1,1), activation="tanh")
+		# s = self.module_interpolated_sin(x, n=8, upscale_ratio=2)
+		# x = self.module_deconv(x, 32*feature_multiplier, 32*feature_multiplier,
+		# 	k1=(4,4), k2=(2,2), activation="tanh") #160x120
+		# x = layers.Concatenate()([x, s])
+		# x = self.module_conv(x, 16*feature_multiplier, 16*feature_multiplier,
+		# 	k1=(4,4), k2=(4,4), s1=(1,1), s2=(1,1), activation="tanh")
 
-		s = self.module_interpolated_sin(x, n=8, upscale_ratio=2)
-		x = self.module_deconv(x, 16*feature_multiplier, 16*feature_multiplier,
-			k1=(4,4), k2=(2,2), activation="tanh") #320x240
-		x = layers.Concatenate()([x, s])
-		x = self.module_conv(x, 8*feature_multiplier, 8*feature_multiplier,
-			k1=(3,1), k2=(1,3), s1=(1,1), s2=(1,1), activation="tanh")
+		# s = self.module_interpolated_sin(x, n=8, upscale_ratio=2)
+		# x = self.module_deconv(x, 16*feature_multiplier, 16*feature_multiplier,
+		# 	k1=(4,4), k2=(2,2), activation="tanh") #320x240
+		# x = layers.Concatenate()([x, s])
+		# x = self.module_conv(x, 8*feature_multiplier, 8*feature_multiplier,
+		# 	k1=(3,1), k2=(1,3), s1=(1,1), s2=(1,1), activation="tanh")
 
-		self.model_image_decoder_o_image = layers.Conv2D(
-			3, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
-			activation="sigmoid")(x)
+		# self.model_image_decoder_o_image = layers.Conv2D(
+		# 	3, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
+		# 	activation="sigmoid")(x)
 
-		self.model_image_decoder_o_depth = layers.Conv2D(
-			1, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
-			activation="linear")(x)
+		# self.model_image_decoder_o_depth = layers.Conv2D(
+		# 	1, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
+		# 	activation="linear")(x)
+
+
+		x = layers.Reshape((120, 160, -1))(self.model_image_decoder_i_image_enc)
+
+		y = self.module_deconv(x, 8, 8, k1=(4,4), k2=(8,8), activation="tanh")
+		y = layers.Conv2D(1, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
+			activation="sigmoid")(y) # luminosity
+
+		z = self.module_deconv(x, 1, 1, k1=(2,2), k2=(2,2), activation="tanh")
+		z = layers.Conv2D(1, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
+			activation="sigmoid")(z) # depth
+
+		x = self.module_conv(x, 4, 4, s1=(1,1), activation="tanh")
+		x = layers.Conv2D(2, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
+			activation="sigmoid")(x) - 0.5
+		x = layers.UpSampling2D(interpolation="bilinear")(x) # chromaticity
+
+		self.model_image_decoder_o_image = layers.Concatenate()([y, x])
+		self.model_image_decoder_o_depth = layers.Conv2D(1, (1, 1),
+			kernel_initializer=initializers.Orthogonal(0.1),
+			activation="linear")(z) # depth
 
 		self.model_image_decoder = keras.Model(
 			inputs=[self.model_image_decoder_i_image_enc],
