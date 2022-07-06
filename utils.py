@@ -1,6 +1,7 @@
 import numpy as np
 import vizdoom as vzd
 import random
+import tensorflow as tf
 
 
 """
@@ -94,3 +95,36 @@ def mutate_action(action, max_flipped_buttons=4, turn_delta_sigma=1.0, turn_damp
     action[14] = np.clip(action[14], -0.9, 0.9)
 
     return np.asarray(action)
+
+
+@tf.function
+def rgb_to_yuv(x):
+    # r/g/b channel weight coefficients
+    wr = 0.299
+    wb = 0.114
+    wg = 1.0-wr-wb
+
+    conversion_matrix = tf.constant([
+        [wr, wg, wb],
+        [-0.5*(wr/(1.0-wb)), -0.5*(wg/(1.0-wb)), 0.5],
+        [0.5, -0.5*(wg/(1.0-wr)), -0.5*(wb/(1.0-wr))]]
+    )
+
+    return tf.linalg.matvec(conversion_matrix, x)
+
+
+@tf.function
+def yuv_to_rgb(x):
+    # r/g/b channel weight coefficients
+    wr = 0.299
+    wb = 0.114
+    wg = 1.0-wr-wb
+
+    conversion_matrix = tf.constant([
+        [1.0, 0.0, 2.0-2.0*wr],
+        [1.0, -(wb/wg)*(2.0-2.0*wb), -(wr/wg)*(2.0-2.0*wr)],
+        [1.0, 2.0-2.0*wb, 0.0]]
+    )
+
+    return tf.linalg.matvec(conversion_matrix, x)
+    
