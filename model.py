@@ -17,7 +17,7 @@ import os
 import cv2
 from tensorflow.python.framework.ops import disable_eager_execution
 from image_loss import ImageLoss
-
+from git import Repo
 
 config = ConfigProto()
 config.gpu_options.allow_growth = True
@@ -201,6 +201,8 @@ class Model:
 
 		self.num_epochs_init = 0
 		self.quiet = quiet # suppress logging and rendering during training
+		self.repo = Repo(".")
+
 		
 	
 	def save_episode_state_images(self, episode_id):
@@ -1247,13 +1249,11 @@ class Model:
 			self.optimizer.apply_gradients(zip(g_model_image_decoder,
 				self.model_image_decoder.trainable_variables))
 
-			# Model name tells how many epochs it has been trained
-			# Model branch tells its "genes" or "type" or origins
-			# so different architectures can be distinguished easily
-			# TODO: use git pip command
-			branch = "e7ff39b"
+			branch = self.repo.commit('HEAD')[:7]
 			num_epochs_trained += 1
 			self.save_model("model", f"model-{branch}-{num_epochs_trained}")
+
+
 
 			del images, actions, rewards, state_init
 			gc.collect()
