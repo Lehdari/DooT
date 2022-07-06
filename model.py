@@ -1180,8 +1180,8 @@ class Model:
 
 				if not self.quiet:
 					show_frame_comparison(
-						image[e%self.n_replay_episodes,:,:,0:3],
-						image_pred_stacked[e%self.n_replay_episodes,:,:,0:3],
+						yuv_to_rgb(image[e%self.n_replay_episodes,:,:,0:3]),
+						yuv_to_rgb(image_pred_stacked[e%self.n_replay_episodes,:,:,0:3]),
 						"rgb"
 					)
 

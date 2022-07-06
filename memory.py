@@ -4,6 +4,7 @@ import random
 import tensorflow as tf
 import os
 from pathlib import Path
+from utils import *
 
 
 class Memory:
@@ -128,7 +129,11 @@ class Memory:
         rewards_slice = self.rewards[begin[np.newaxis,:]+j, i[np.newaxis,:]]
 
         return\
-            (tf.convert_to_tensor(images_slice, dtype=tf.float32) * 0.0039215686274509803,
+            (tf.concat([
+            tf.convert_to_tensor(images_slice[..., 0:1], dtype=tf.float32) * 0.0039215686274509803,
+            rgb_to_yuv(tf.convert_to_tensor(images_slice[..., 1:4], dtype=tf.float32) * 0.0039215686274509803),
+            tf.convert_to_tensor(images_slice[..., 4:5], dtype=tf.float32) * 0.0039215686274509803
+            ], axis=4),
             tf.convert_to_tensor(actions_slice),
             tf.convert_to_tensor(rewards_slice),
             tf.convert_to_tensor(state))
