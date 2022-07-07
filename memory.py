@@ -95,12 +95,11 @@ class Memory:
 
 
     @staticmethod
-    def rand_int_range_or_zero(x):
+    def rand_int_range_or_zero(x: int) -> int:
         if x == 0:
             return 0
         else:
-            random.randint(0, x)
-
+            return random.randint(0, x)
 
     def get_sample(self, length, model_state=None, model_image_encoder=None):
         # min_episode_length = np.amin(self.episode_lengths)
