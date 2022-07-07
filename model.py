@@ -1249,7 +1249,9 @@ class Model:
 			self.optimizer.apply_gradients(zip(g_model_image_decoder,
 				self.model_image_decoder.trainable_variables))
 
-			branch = self.repo.commit('HEAD')[:7]
+			branch = str(self.repo.commit('HEAD'))
+			print("branch:", branch)
+			branch = branch[0:7]
 			num_epochs_trained += 1
 			self.save_model("model", f"model-{branch}-{num_epochs_trained}")
 
