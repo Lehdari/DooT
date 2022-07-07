@@ -130,6 +130,7 @@ def main(args):
             print(f"Run {i} / {runs}")
             model.train(memory)
     else:
+        memory = trainer.run(model)
         for i in range(runs):
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 # start a new memory gathering run concurrently
