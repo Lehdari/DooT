@@ -37,7 +37,10 @@ class Memory:
         self.episode_lengths = np.zeros((self.n_episodes,), dtype=int)
         self.active_episode = 0
 
-
+    # image: (240, 320, 5)
+    # image[:,:,0] is automap
+    # image[:,:,1:3] are game screen buffer in RGB straight from vizdoom
+    # image[:,:,-1] is depth
     def store_entry(self, time_step, image, action, reward):
         if self.use_ringbuffer:
             self.images[self.active_episode].append(image)

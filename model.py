@@ -154,7 +154,7 @@ class ActionModel:
 
 class Model:
 	def __init__(self, episode_length, n_replay_episodes, n_training_epochs, replay_sample_length,
-		output_dir,
+		train_log_dir,
 		output_visual_log=False, quiet=False):
 		self.initializer = initializers.RandomNormal(stddev=0.03)
 		self.beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.0)
@@ -196,7 +196,7 @@ class Model:
 
 		np.random.seed(1507715517)
 
-		self.train_log_dir = output_dir
+		self.train_log_dir = train_log_dir
 		self.train_summary_writer = tf.summary.create_file_writer(self.train_log_dir)
 
 		self.num_epochs_init = 0

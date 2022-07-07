@@ -155,8 +155,10 @@ class TrainerInterface:
 			# 	self.n_discards += 1
 			# 	return False
 
-			# TODO: if exit is found really soon we don't want to discard that
-			# episode
+			# TODO: if exit is found really soon we don't want to discard
+			# that episode. We need to update model train function
+			# to allow having shorter episodes OR append these
+			# frames to another entry.
 			if self.n_entries < self.replay_sample_length:
 				print("Episode was too short")
 				self.n_discards +=1
