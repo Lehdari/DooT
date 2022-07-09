@@ -125,11 +125,12 @@ class Memory:
         actions_slice = self.actions[begin[np.newaxis,:]+j, i[np.newaxis,:]]
         rewards_slice = self.rewards[begin[np.newaxis,:]+j, i[np.newaxis,:]]
 
+        uint8_to_float = 0.0039215686274509803 #1/255
         return\
             (tf.concat([
-            tf.convert_to_tensor(images_slice[..., 0:1], dtype=tf.float32) * 0.0039215686274509803,
-            rgb_to_yuv(tf.convert_to_tensor(images_slice[..., 1:4], dtype=tf.float32) * 0.0039215686274509803),
-            tf.convert_to_tensor(images_slice[..., 4:5], dtype=tf.float32) * 0.0039215686274509803
+            tf.convert_to_tensor(images_slice[..., 0:1], dtype=tf.float32) * uint8_to_float,
+            rgb_to_yuv(tf.convert_to_tensor(images_slice[..., 1:4], dtype=tf.float32) * uint8_to_float),
+            tf.convert_to_tensor(images_slice[..., 4:5], dtype=tf.float32) * uint8_to_float
             ], axis=4),
             tf.convert_to_tensor(actions_slice),
             tf.convert_to_tensor(rewards_slice),

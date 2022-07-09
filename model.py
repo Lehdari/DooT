@@ -18,6 +18,7 @@ import cv2
 from tensorflow.python.framework.ops import disable_eager_execution
 from image_loss import ImageLoss
 from git import Repo
+import metrics
 
 config = ConfigProto()
 config.gpu_options.allow_growth = True
@@ -1152,11 +1153,26 @@ class Model:
 				
 				loss_total += loss_total_tf.numpy()
 
+				image = images[i][:,:,:,1:]
+				image_pred_stacked = layers.Concatenate(axis=3)([image_pred, depth_pred])
+
+				yuv_target = image[e%self.n_replay_episodes,:,:,0:3]
+				yuv_pred = image_pred_stacked[e%self.n_replay_episodes,:,:,0:3]
 				if not self.quiet:
-					print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f}".format(
+					# Metrics
+					metrics.print_total_metrics(yuv_target, yuv_pred)
+
+					# Encode+decode twice (with the same automap) and check the yuv results
+					image_target = images[i][:,:,:,1:4]
+					automap = images[i][:,:,:,0:1]
+					image_target_combined = images[i][:,:,:,1:]
+					double_edec_loss = metrics.double_edec_loss(self.model_image_encoder,
+						self.model_image_decoder, image_target, image_target_combined, automap)
+
+					print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_edec: {:8.5f}".format(
 						e, i, self.replay_sample_length,
-						loss_total/n_iters),
-						end="\r")
+						loss_total/n_iters,
+						double_edec_loss/n_iters))
 				
 				if g_model_image_encoder is None:
 					g_model_image_encoder = gi_model_image_encoder
@@ -1168,8 +1184,6 @@ class Model:
 				else:
 					g_model_image_decoder = [a+b for a,b in zip(g_model_image_decoder, gi_model_image_decoder)]
 
-				image = images[i][:,:,:,1:]
-				image_pred_stacked = layers.Concatenate(axis=3)([image_pred, depth_pred])
 
 				if not self.quiet:
 					image_loss = ImageLoss(image, image_pred_stacked)
@@ -1177,18 +1191,15 @@ class Model:
 					# print(tf.math.multiply(image_loss.losses, image_loss.weight_matrix).numpy())
 
 				if not self.quiet:
-					show_frame_comparison(
-						yuv_to_rgb(image[e%self.n_replay_episodes,:,:,0:3]),
-						yuv_to_rgb(image_pred_stacked[e%self.n_replay_episodes,:,:,0:3]),
-						"rgb"
-					)
+					show_frame_comparison_all(yuv_to_rgb(yuv_target),
+						yuv_to_rgb(yuv_pred),
+						"rgb")
 
-					show_frame_comparison(
+					show_frame_comparison_all(
 						image[e%self.n_replay_episodes,:,:,3:4],
 						image_pred_stacked[e%self.n_replay_episodes,:,:,3:4],
 						"depth"
 					)
-
 					cv2.waitKey(1)
 				
 				n_iters += 1
