@@ -412,33 +412,17 @@ class Model:
 				image_enc = self.model_image_encoder([image, automap], training=True)
 				image_pred, depth_pred = self.model_image_decoder(image_enc, training=True)
 
-				# hud_attenuation = 0.05
-				# hud_att_mask = tf.where(images[i][:,:,:,4:5] > 0.0,
-				# 	tf.ones_like(images[i][:,:,:,4:5]),
-				# 	tf.ones_like(images[i][:,:,:,4:5])*hud_attenuation)
-				
-				# image_att = images[i][:,:,:,0:3]*hud_att_mask
-				# image_pred_att = image_pred[:,:,:,0:3]*hud_att_mask
-				
-				# image_loss = ImageLoss(image, image_pred)
-
 				image_combined = images[i][:,:,:,1:]
 				image_combined_pred = layers.Concatenate()([image_pred, depth_pred])
-				loss_mask = tf.cast(tf.where(images[i][:,:,:,4:5] > 0.001,
-					tf.ones_like(images[i][:,:,:,4:5]),
-					tf.zeros_like(images[i][:,:,:,4:5])), tf.float32)
-				image_loss = ImageLoss(image_combined, image_combined_pred,
-					loss_mask,
-					depth_weight=0.0)
+				
+				image_loss = ImageLoss(image_combined, image_combined_pred)
 				loss_total = image_loss.total_loss()
 
 			g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
 			g_model_image_decoder = gt.gradient(loss_total, self.model_image_decoder.trainable_variables)
 
 			return image_pred, depth_pred, g_model_image_encoder, g_model_image_decoder,\
-				loss_total, image_loss.loss_image,\
-				image_loss.losses_laplacian[0], image_loss.losses_laplacian[1], image_loss.losses_laplacian[2],\
-				image_loss.losses_laplacian[3], image_loss.losses_laplacian[4]
+				loss_total
 
 		self.train_image_encoder_model = train_image_encoder_model
 		self.train_backbone_inverse = train_backbone_inverse
@@ -1159,37 +1143,19 @@ class Model:
 			# unused
 			# state_prev = state_init
 			loss_total = 0.0
-			loss_decode = 0.0
-			loss_decode_gradient = 0.0
-			loss_decode_gradient2 = 0.0
-			loss_decode_gradient4 = 0.0
-			loss_decode_gradient8 = 0.0
-			loss_decode_gradient16 = 0.0
 			g_model_image_encoder = None
 			g_model_image_decoder = None
 			n_iters = 1
 			for i in range(self.replay_sample_length):
 				image_pred, depth_pred, gi_model_image_encoder, gi_model_image_decoder,\
-					loss_total_tf, loss_decode_tf,\
-					loss_decode_gradient_tf, loss_decode_gradient2_tf, loss_decode_gradient4_tf,\
-					loss_decode_gradient8_tf, loss_decode_gradient16_tf=\
-					self.train_autoencoder(images, tf.convert_to_tensor(i))
+					loss_total_tf = self.train_autoencoder(images, tf.convert_to_tensor(i))
 				
 				loss_total += loss_total_tf.numpy()
-				loss_decode += loss_decode_tf.numpy()
-				loss_decode_gradient += loss_decode_gradient_tf.numpy()
-				loss_decode_gradient2 += loss_decode_gradient2_tf.numpy()
-				loss_decode_gradient4 += loss_decode_gradient4_tf.numpy()
-				loss_decode_gradient8 += loss_decode_gradient8_tf.numpy()
-				loss_decode_gradient16 += loss_decode_gradient16_tf.numpy()
 
 				if not self.quiet:
-					print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_d: {:8.5f} l_dg: {:8.5f} {:8.5f} {:8.5f} {:8.5f} {:8.5f}".format(
+					print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f}".format(
 						e, i, self.replay_sample_length,
-						loss_total/n_iters, loss_decode/n_iters,
-						loss_decode_gradient/n_iters, loss_decode_gradient2/n_iters,
-						loss_decode_gradient4/n_iters, loss_decode_gradient8/n_iters,
-						loss_decode_gradient16/n_iters),
+						loss_total/n_iters),
 						end="\r")
 				
 				if g_model_image_encoder is None:
@@ -1204,13 +1170,11 @@ class Model:
 
 				image = images[i][:,:,:,1:]
 				image_pred_stacked = layers.Concatenate(axis=3)([image_pred, depth_pred])
-				loss_mask = tf.cast(tf.where(images[i][:,:,:,4:5] > 0.001,
-					tf.ones_like(images[i][:,:,:,4:5]),
-					tf.zeros_like(images[i][:,:,:,4:5])), tf.float32)
 
-				# Unused at the moment	
-				# if not self.quiet:
-				# 	image_loss = ImageLoss(image, image_pred_stacked, loss_mask)
+				if not self.quiet:
+					image_loss = ImageLoss(image, image_pred_stacked)
+					cv2.imshow("mask", image_loss.loss_mask[e%self.n_replay_episodes].numpy())
+					# print(tf.math.multiply(image_loss.losses, image_loss.weight_matrix).numpy())
 
 				if not self.quiet:
 					show_frame_comparison(
@@ -1237,12 +1201,6 @@ class Model:
 			# Update Tensorboard
 			with self.train_summary_writer.as_default():
 				tf.summary.scalar('loss_total', loss_total / n_iters, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode', loss_decode / n_iters, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode_gradient', loss_decode_gradient / n_iters, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode_gradient2', loss_decode_gradient2 / n_iters, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode_gradient4', loss_decode_gradient4 / n_iters, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode_gradient8', loss_decode_gradient8 / n_iters, step=num_epochs_trained)
-				tf.summary.scalar('loss_decode_gradient16', loss_decode_gradient16 / n_iters, step=num_epochs_trained)
 
 			self.optimizer.apply_gradients(zip(g_model_image_encoder,
 				self.model_image_encoder.trainable_variables))
