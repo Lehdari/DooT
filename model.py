@@ -166,7 +166,7 @@ class Model:
 		self.loss_function = keras.losses.MeanSquaredError()
 
 		self.state_size = 512
-		self.image_enc_size = 120*160*4
+		self.image_enc_size = 20*20*32
 		self.tbptt_length_encoder = 8
 		self.tbptt_length_backbone = 64
 		self.tbptt_length_action = 16
@@ -487,7 +487,10 @@ class Model:
 
 
 	def module_conv(self, x, n1, n2, k1=(3,3), k2=(3,3), s1=(2,2), s2=(1,1),
-		p1="same", p2="same", activation="relu", alpha=0.001):
+		p1="same", p2="same", activation1="relu", activation2="relu", alpha=0.001,
+		use_post_activation=False,
+		initializer_primary=initializers.Orthogonal(0.5),
+		initializer_secondary=initializers.Orthogonal()):
 
 		#shortcut by avg pooling
 		pool_x_size = s1[0]*s2[0]
@@ -506,36 +509,57 @@ class Model:
 			y = layers.AveragePooling2D((pool_x_size, pool_y_size))(y)	
 		if n2 != x.shape[3] or skip_x_kernel > 1 or skip_y_kernel > 1:
 			y = layers.Conv2D(n2, (skip_x_kernel, skip_y_kernel),
-				kernel_initializer=initializers.Orthogonal(0.5), use_bias=False, padding="valid")(y)
+				kernel_initializer=initializer_primary, use_bias=False, padding="valid")(y)
 			y = layers.BatchNormalization(axis=-1,
 				beta_initializer = self.beta_initializer,
 				gamma_initializer = self.gamma_initializer)(y)
 
-		x = layers.Conv2D(n1, k1, padding=p1, kernel_initializer=initializers.Orthogonal(),
+		x = layers.Conv2D(n1, k1, padding=p1, kernel_initializer=initializer_secondary,
 			strides=s1, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
-		if activation == "tanh":
+		if activation1 == "tanh":
 			x = layers.Activation(activations.tanh)(x)
-		elif activation == "relu":
+		if activation1 == "sigmoid":
+			x = layers.Activation(activations.sigmoid)(x)
+		elif activation1 == "relu":
 			x = activations.relu(x, alpha=alpha)
+		else:
+			pass
 
-		x = layers.Conv2D(n2, k2, padding=p2, kernel_initializer=initializers.Orthogonal(0.5),
+		x = layers.Conv2D(n2, k2, padding=p2, kernel_initializer=initializer_primary,
 			strides=s2, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
-		if activation == "tanh":
-			x = layers.Activation(activations.tanh)(x)
-		elif activation == "relu":
-			x = activations.relu(x, alpha=alpha)
+		if not use_post_activation:
+			if activation2 == "tanh":
+				x = layers.Activation(activations.tanh)(x)
+			if activation2 == "sigmoid":
+				x = layers.Activation(activations.sigmoid)(x)
+			elif activation2 == "relu":
+				x = activations.relu(x, alpha=alpha)
+			else:
+				pass
 
-		return layers.Add()([x, y])
+		x = layers.Add()([x, y])
+		if use_post_activation:
+			if activation2 == "tanh":
+				x = layers.Activation(activations.tanh)(x)
+			if activation2 == "sigmoid":
+				x = layers.Activation(activations.sigmoid)(x)
+			elif activation2 == "relu":
+				x = activations.relu(x, alpha=alpha)
+			else:
+				pass
+		
+		return x
 	
 
 	def module_deconv(self, x, n1, n2, k1=(4,4), k2=(2,2), s1=(2,2), s2=(1,1),
-		p1="same", p2="same", activation="relu", bn2=True, alpha=0.001,
+		p1="same", p2="same", activation1="relu", activation2="relu", alpha=0.001,
+		use_post_activation=False,
 		initializer_primary=initializers.Orthogonal(0.5),
 		initializer_secondary=initializers.Orthogonal()):
 
@@ -559,9 +583,11 @@ class Model:
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
-		if activation == "tanh":
+		if activation1 == "tanh":
 			x = layers.Activation(activations.tanh)(x)
-		elif activation == "relu":
+		if activation1 == "sigmoid":
+			x = layers.Activation(activations.sigmoid)(x)
+		elif activation1 == "relu":
 			x = activations.relu(x, alpha=alpha)
 		else:
 			pass
@@ -571,15 +597,27 @@ class Model:
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
-		if activation == "tanh":
-			x = layers.Activation(activations.tanh)(x)
-		elif activation == "relu":
-			x = activations.relu(x, alpha=alpha)
-		else:
-			pass
+		if not use_post_activation:
+			if activation2 == "tanh":
+				x = layers.Activation(activations.tanh)(x)
+			if activation2 == "sigmoid":
+				x = layers.Activation(activations.sigmoid)(x)
+			elif activation2 == "relu":
+				x = activations.relu(x, alpha=alpha)
+			else:
+				pass
 
 		x = layers.Add()([x, y])
-		
+		if use_post_activation:
+			if activation2 == "tanh":
+				x = layers.Activation(activations.tanh)(x)
+			if activation2 == "sigmoid":
+				x = layers.Activation(activations.sigmoid)(x)
+			elif activation2 == "relu":
+				x = activations.relu(x, alpha=alpha)
+			else:
+				pass
+
 		return x
 	
 
@@ -830,9 +868,14 @@ class Model:
 
 		x = layers.Concatenate()([self.model_image_encoder_i_image, self.model_image_encoder_i_automap])
 
-		x = self.module_conv(x, 4, 4, k1=(2,2), k2=(2,2))
+		x = self.module_conv(x, 12, 12, k1=(3,2), s1=(3,2), k2=(2,4), s2=(1,2),
+			p1="same", p2="same", activation1="relu", activation2="tanh")
+		x = self.module_conv(x, 16, 16, k1=(4,4), s1=(2,2), k2=(2,4), s2=(1,1),
+			p1="same", p2="same", activation1="relu", activation2="tanh")
+		x = self.module_conv(x, 32, 32, k1=(4,4), s1=(2,2), k2=(2,4), s2=(1,1),
+			p1="same", p2="same", activation1="relu", activation2="tanh")
 
-		x = layers.Conv2D(4, (1,1),
+		x = layers.Conv2D(32, (1,1),
 			kernel_initializer=self.initializer,
 			activity_regularizer=L2Regularizer(1.0e-6))(x)
 
@@ -892,20 +935,30 @@ class Model:
 		# 	activation="linear")(x)
 
 
-		x = layers.Reshape((120, 160, -1))(self.model_image_decoder_i_image_enc)
+		x = layers.Reshape((20, 20, -1))(self.model_image_decoder_i_image_enc)
+		x = self.module_deconv(x, 32, 32, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			activation1="tanh", activation2="tanh")
+		x = self.module_conv(x, 64, 32, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+			activation1="tanh", activation2="tanh")
 
-		y = self.module_deconv(x, 8, 8, k1=(4,4), k2=(8,8), activation="tanh")
-		y = layers.Conv2D(1, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
-			activation="sigmoid")(y) # luminosity
+		x = self.module_deconv(x, 16, 16, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			activation1="tanh", activation2="tanh")
+		x = self.module_conv(x, 32, 16, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+			activation1="tanh", activation2="tanh")
 
-		z = self.module_deconv(x, 1, 1, k1=(2,2), k2=(2,2), activation="tanh")
+		y = self.module_deconv(x, 8, 4, k1=(2,4), s1=(1,2), k2=(6,4), s2=(3,2), activation2="tanh")
+		y = self.module_conv(y, 4, 1, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+			activation1="tanh", activation2="sigmoid", use_post_activation=True,
+			initializer_primary=initializers.Orthogonal(0.01)) # luminosity
+
+		z = self.module_deconv(x, 1, 1, k1=(2,4), s1=(1,2), k2=(3,2), s2=(3,2), activation2="tanh")
 		z = layers.Conv2D(1, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
 			activation="sigmoid")(z) # depth
 
-		x = self.module_conv(x, 4, 4, s1=(1,1), activation="tanh")
-		x = layers.Conv2D(2, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
-			activation="sigmoid")(x) - 0.5
-		x = layers.UpSampling2D(interpolation="bilinear")(x) # chromaticity
+		x = self.module_deconv(x, 8, 4, k1=(2,4), s1=(1,2), k2=(6,4), s2=(3,2), activation2="tanh")
+		x = self.module_conv(x, 4, 2, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+			activation1="tanh", activation2="sigmoid", use_post_activation=True,
+			initializer_primary=initializers.Orthogonal(0.01)) - 0.5 # chromaticity
 
 		self.model_image_decoder_o_image = layers.Concatenate()([y, x])
 		self.model_image_decoder_o_depth = layers.Conv2D(1, (1, 1),
