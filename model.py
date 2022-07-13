@@ -166,7 +166,7 @@ class Model:
 		self.loss_function = keras.losses.MeanSquaredError()
 
 		self.state_size = 512
-		self.image_enc_size = 10*10*64
+		self.image_enc_size = 5*5*128
 		self.tbptt_length_encoder = 8
 		self.tbptt_length_backbone = 64
 		self.tbptt_length_action = 16
@@ -877,8 +877,10 @@ class Model:
 			p1="same", p2="same", activation1="relu", activation2="tanh") # 20x20
 		x = self.module_conv(x, 64, 64, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
 			p1="same", p2="same", activation1="relu", activation2="tanh") # 10x10
+		x = self.module_conv(x, 128, 128, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			p1="same", p2="same", activation1="relu", activation2="tanh") # 5x5
 
-		x = layers.Conv2D(64, (1,1),
+		x = layers.Conv2D(128, (1,1),
 			kernel_initializer=self.initializer,
 			activity_regularizer=L2Regularizer(1.0e-6))(x)
 
@@ -938,7 +940,12 @@ class Model:
 		# 	activation="linear")(x)
 
 
-		x = layers.Reshape((10, 10, -1))(self.model_image_decoder_i_image_enc)
+		x = layers.Reshape((5, 5, -1))(self.model_image_decoder_i_image_enc)
+		x = self.module_deconv(x, 256, 128, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			activation1="tanh", activation2="tanh") # 10x10
+		x = self.module_conv(x, 256, 128, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+			activation1="tanh", activation2="tanh")
+		
 		x = self.module_deconv(x, 128, 64, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
 			activation1="tanh", activation2="tanh") # 20x20
 		x = self.module_conv(x, 128, 64, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
