@@ -166,7 +166,7 @@ class Model:
 		self.loss_function = keras.losses.MeanSquaredError()
 
 		self.state_size = 512
-		self.image_enc_size = 20*20*32
+		self.image_enc_size = 10*10*64
 		self.tbptt_length_encoder = 8
 		self.tbptt_length_backbone = 64
 		self.tbptt_length_action = 16
@@ -573,10 +573,11 @@ class Model:
 			pool_x_size += k2[0]-1
 			pool_y_size += k2[1]-1
 		y = layers.UpSampling2D((pool_x_size, pool_y_size), interpolation="bilinear")(x)
-		y = layers.Conv2D(n2, (1, 1), kernel_initializer=initializer_primary, use_bias=False)(y)
-		y = layers.BatchNormalization(axis=-1,
-			beta_initializer = self.beta_initializer,
-			gamma_initializer = self.gamma_initializer)(y)
+		if n2 != x.shape[3]:
+			y = layers.Conv2D(n2, (1, 1), kernel_initializer=initializer_primary, use_bias=False)(y)
+			y = layers.BatchNormalization(axis=-1,
+				beta_initializer = self.beta_initializer,
+				gamma_initializer = self.gamma_initializer)(y)
 
 		x = layers.Conv2DTranspose(n1, k1, padding=p1, kernel_initializer=initializer_secondary,
 			strides=s1, use_bias=False)(x)
@@ -868,14 +869,16 @@ class Model:
 
 		x = layers.Concatenate()([self.model_image_encoder_i_image, self.model_image_encoder_i_automap])
 
-		x = self.module_conv(x, 12, 12, k1=(3,2), s1=(3,2), k2=(2,4), s2=(1,2),
-			p1="same", p2="same", activation1="relu", activation2="tanh")
-		x = self.module_conv(x, 16, 16, k1=(4,4), s1=(2,2), k2=(2,4), s2=(1,1),
-			p1="same", p2="same", activation1="relu", activation2="tanh")
-		x = self.module_conv(x, 32, 32, k1=(4,4), s1=(2,2), k2=(2,4), s2=(1,1),
-			p1="same", p2="same", activation1="relu", activation2="tanh")
+		x = self.module_conv(x, 12, 16, k1=(3,2), s1=(3,2), k2=(2,4), s2=(1,2),
+			p1="same", p2="same", activation1="relu", activation2="tanh") # 80x80
+		x = self.module_conv(x, 16, 16, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			p1="same", p2="same", activation1="relu", activation2="tanh") # 40x40
+		x = self.module_conv(x, 32, 32, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			p1="same", p2="same", activation1="relu", activation2="tanh") # 20x20
+		x = self.module_conv(x, 64, 64, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			p1="same", p2="same", activation1="relu", activation2="tanh") # 10x10
 
-		x = layers.Conv2D(32, (1,1),
+		x = layers.Conv2D(64, (1,1),
 			kernel_initializer=self.initializer,
 			activity_regularizer=L2Regularizer(1.0e-6))(x)
 
@@ -935,35 +938,37 @@ class Model:
 		# 	activation="linear")(x)
 
 
-		x = layers.Reshape((20, 20, -1))(self.model_image_decoder_i_image_enc)
-		x = self.module_deconv(x, 32, 32, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+		x = layers.Reshape((10, 10, -1))(self.model_image_decoder_i_image_enc)
+		x = self.module_deconv(x, 128, 64, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			activation1="tanh", activation2="tanh") # 20x20
+		x = self.module_conv(x, 128, 64, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
 			activation1="tanh", activation2="tanh")
+		
+		x = self.module_deconv(x, 64, 32, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			activation1="tanh", activation2="tanh") # 40x40
 		x = self.module_conv(x, 64, 32, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
 			activation1="tanh", activation2="tanh")
 
-		x = self.module_deconv(x, 16, 16, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-			activation1="tanh", activation2="tanh")
+		x = self.module_deconv(x, 32, 16, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			activation1="tanh", activation2="tanh") # 80x80
 		x = self.module_conv(x, 32, 16, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
 			activation1="tanh", activation2="tanh")
 
-		y = self.module_deconv(x, 8, 4, k1=(2,4), s1=(1,2), k2=(6,4), s2=(3,2), activation2="tanh")
-		y = self.module_conv(y, 4, 1, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+		x = self.module_deconv(x, 16, 16, k1=(6,4), s1=(3,2), k2=(2,4), s2=(1,2),
+			activation1="tanh", activation2="tanh") # 240x320
+
+		y = self.module_conv(x, 8, 1, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
 			activation1="tanh", activation2="sigmoid", use_post_activation=True,
 			initializer_primary=initializers.Orthogonal(0.01)) # luminosity
 
-		z = self.module_deconv(x, 1, 1, k1=(2,4), s1=(1,2), k2=(3,2), s2=(3,2), activation2="tanh")
-		z = layers.Conv2D(1, (1, 1), kernel_initializer=initializers.Orthogonal(0.1),
-			activation="sigmoid")(z) # depth
-
-		x = self.module_deconv(x, 8, 4, k1=(2,4), s1=(1,2), k2=(6,4), s2=(3,2), activation2="tanh")
-		x = self.module_conv(x, 4, 2, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+		x = self.module_conv(x, 8, 2, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
 			activation1="tanh", activation2="sigmoid", use_post_activation=True,
 			initializer_primary=initializers.Orthogonal(0.01)) - 0.5 # chromaticity
 
 		self.model_image_decoder_o_image = layers.Concatenate()([y, x])
 		self.model_image_decoder_o_depth = layers.Conv2D(1, (1, 1),
 			kernel_initializer=initializers.Orthogonal(0.1),
-			activation="linear")(z) # depth
+			activation="linear")(x) # depth TODO change to module_conv
 
 		self.model_image_decoder = keras.Model(
 			inputs=[self.model_image_decoder_i_image_enc],
