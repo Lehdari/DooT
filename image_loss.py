@@ -21,19 +21,20 @@ class ImageLoss:
             [4.0, 2.0, 2.0, 2.0], # laplacian 8
             [4.0, 2.0, 2.0, 2.0], # laplacian 16
         ],
-        mask_hud=True):
+        mask_hud=True,
+        n_levels=1 # number of laplacian and gradient layers to use
+        ):
 
         self.image = image
         self.image_pred = image_pred
-        self.loss_mask = tf.ones_like(image)
+        self.loss_channel_mask = tf.ones_like(image)
+        self.weight_matrix = tf.constant(weight_matrix)
         if mask_hud:
             self.loss_mask = tf.cast(tf.where(image[:,:,:,3:4] > 0.001,
                 tf.ones_like(image[:,:,:,3:4]),
                 tf.zeros_like(image[:,:,:,3:4])), tf.float32)
-
-        self.weight_matrix = tf.constant(weight_matrix)
-
-        self.n_levels = 5
+        self.loss_mask_gradient = image[:,:,:,3:4] * 4.0
+        self.n_levels = n_levels
 
         self.images_blurred = tf.stack([
             gaussian_filter2d(image, sigma=2.0**i, filter_shape=[int((2**i)*4+1), int((2**i)*4+1)],
@@ -57,7 +58,8 @@ class ImageLoss:
             return [0.0, 0.0, 0.0, 0.0]
         else:
             return ImageLoss.image_loss_gradient(
-                self.images_blurred[level], self.image_preds_blurred[level], self.loss_mask, 2**level)
+                self.images_blurred[level], self.image_preds_blurred[level],
+                self.loss_mask_gradient, 2**level)
     
     def loss_laplacian_level(self, level):
         if level >= self.n_levels:
@@ -70,7 +72,8 @@ class ImageLoss:
             else:
                 return ImageLoss.image_loss(
                     self.images_blurred[level]-self.images_blurred[level-1],
-                    self.image_preds_blurred[level]-self.image_preds_blurred[level-1], self.loss_mask)
+                    self.image_preds_blurred[level]-self.image_preds_blurred[level-1],
+                    self.loss_mask_gradient)
 
     @staticmethod
     def image_loss(y_true, y_pred, mask):

@@ -1309,6 +1309,7 @@ class Model:
 						
 					image_loss = ImageLoss(image, image_pred_stacked)
 					cv2.imshow("mask", image_loss.loss_mask[e%self.n_replay_episodes].numpy())
+					cv2.imshow("mask_gradient", image_loss.loss_mask_gradient[e%self.n_replay_episodes].numpy())
 					# print(tf.math.multiply(image_loss.losses, image_loss.weight_matrix).numpy())
 
 					yuv_target = image[e%self.n_replay_episodes,:,:,0:3]
