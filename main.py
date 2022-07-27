@@ -24,7 +24,9 @@ import datetime
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--model', type=str, help="model name in directory models/", default="model")
+    parser.add_argument('--model', type=str, help="model name in model directory", default="model")
+    parser.add_argument('--model-dir', type=str, help="model directory", default="models/model")
+    parser.add_argument('--log-dir', type=str, help="log output directory in logs/", default="")
     parser.add_argument('--quiet', action="store_true", help="suppress logging and plots", default=False)
     parser.add_argument('--runs', type=int, help="number of training runs", default=16384)
     parser.add_argument('--episode-length', type=int,
@@ -49,6 +51,15 @@ def parse_args():
     parser.add_argument('--window-visible', action="store_true",
         help="show vizdoom window during training (this is different from opencv/matplotlib plot images)",
         default=False)
+    parser.add_argument("--learning-rate", type=float,
+        help="learning rate to be used during training",
+        default=0.001)
+    parser.add_argument("--momentum", type=float,
+        help="momentum to be used during training",
+        default=0.9)
+    parser.add_argument('--architecture', type=int,
+        help="architecture to use: 1 - default, 2 - wider, 3 - deeper",
+        default=1)
 
     # Currently not used probably
     parser.add_argument('--output-visual-log', action="store_true",
@@ -67,6 +78,7 @@ def parse_args():
 
 def main(args):
     model_filename = args.model
+    model_dir = args.model_dir
     episode_length = args.episode_length
     runs = args.runs
     min_episode_length = args.min_episode_length # TEMP Eljas: the piece of code that uses this is commented away
@@ -78,18 +90,28 @@ def main(args):
     output_visual_log = args.output_visual_log
     quiet = args.quiet
     smoketest = args.smoketest
+    learning_rate = args.learning_rate
+    momentum = args.momentum
+    architecture = args.architecture
 
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = 'logs/' + current_time + '/train'
+    if args.log_dir == "":
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        train_log_dir = 'logs/' + current_time + '/train'
+    else:
+        train_log_dir = args.log_dir
+    print(f"Log directory: {train_log_dir}")
 
     reward_controller = Reward()
     model = Model(episode_length, n_replay_episodes,
         n_training_epochs, replay_sample_length,
         train_log_dir,
-        output_visual_log, quiet)
+        output_visual_log, quiet,
+        model_directory=model_dir,
+        learning_rate=learning_rate,
+        momentum=momentum,
+        architecture=architecture)
 
     if model_filename is not None:
-        model_dir = "model"
         if isdir(model_dir):
             print(f"Found directory {model_dir}")
             print("Searching saved neural network models")
@@ -101,9 +123,6 @@ def main(args):
                 model.load_model(model_filename, h5files[0])
             else:
                 print(f"Model with name {model_filename} not found in {model_dir}, creating new model")
-        else:
-            print(f"Did not find directory {model_dir}. Creating the directory and creating a new model")
-            mkdir(model_dir)
     else:
         print("Model filename not specified. Exiting.")
         return
