@@ -1062,15 +1062,17 @@ class Model:
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer) # luminosity
 
-		x = self.module_conv(x, 8, 2, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+		z = self.module_conv(x, 8, 2, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
 			activation1="tanh", activation2="sigmoid", use_post_activation=True,
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer) - 0.5 # chromaticity
 
-		self.model_image_decoder_o_image = layers.Concatenate()([y, x])
-		self.model_image_decoder_o_depth = layers.Conv2D(1, (1, 1),
-			kernel_initializer=self.initializer,
-			activation="linear")(x) # depth TODO change to module_conv
+		self.model_image_decoder_o_image = layers.Concatenate()([y, z])
+		self.model_image_decoder_o_depth = self.module_conv(x, 8, 1,
+			k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+			activation1="tanh", activation2="linear", use_post_activation=True,
+			initializer_primary=self.initializer,
+			initializer_secondary=self.initializer)
 
 		self.model_image_decoder = keras.Model(
 			inputs=[self.model_image_decoder_i_image_enc],
