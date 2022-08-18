@@ -526,17 +526,17 @@ class Model:
 		if pool_x_size != 1 or pool_y_size != 1:
 			y = layers.AveragePooling2D((pool_x_size, pool_y_size))(y)	
 		if n2 != x.shape[3] or skip_x_kernel > 1 or skip_y_kernel > 1:
-			y = layers.Conv2D(n2, (skip_x_kernel, skip_y_kernel),
-				kernel_initializer=initializer_primary, use_bias=False, padding="valid")(y)
 			y = layers.BatchNormalization(axis=-1,
 				beta_initializer = self.beta_initializer,
 				gamma_initializer = self.gamma_initializer)(y)
+			y = layers.Conv2D(n2, (skip_x_kernel, skip_y_kernel),
+				kernel_initializer=initializer_primary, use_bias=False, padding="valid")(y)
 
-		x = layers.Conv2D(n1, k1, padding=p1, kernel_initializer=initializer_secondary,
-			strides=s1, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
+		x = layers.Conv2D(n1, k1, padding=p1, kernel_initializer=initializer_secondary,
+			strides=s1, use_bias=False)(x)
 		if activation1 == "tanh":
 			x = layers.Activation(activations.tanh)(x)
 		if activation1 == "sigmoid":
@@ -546,11 +546,11 @@ class Model:
 		else:
 			pass
 
-		x = layers.Conv2D(n2, k2, padding=p2, kernel_initializer=initializer_primary,
-			strides=s2, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
+		x = layers.Conv2D(n2, k2, padding=p2, kernel_initializer=initializer_primary,
+			strides=s2, use_bias=False)(x)
 		if not use_post_activation:
 			if activation2 == "tanh":
 				x = layers.Activation(activations.tanh)(x)
@@ -592,16 +592,16 @@ class Model:
 			pool_y_size += k2[1]-1
 		y = layers.UpSampling2D((pool_x_size, pool_y_size), interpolation="bilinear")(x)
 		if n2 != x.shape[3]:
-			y = layers.Conv2D(n2, (1, 1), kernel_initializer=initializer_primary, use_bias=False)(y)
 			y = layers.BatchNormalization(axis=-1,
 				beta_initializer = self.beta_initializer,
 				gamma_initializer = self.gamma_initializer)(y)
+			y = layers.Conv2D(n2, (1, 1), kernel_initializer=initializer_primary, use_bias=False)(y)
 
-		x = layers.Conv2DTranspose(n1, k1, padding=p1, kernel_initializer=initializer_secondary,
-			strides=s1, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
+		x = layers.Conv2DTranspose(n1, k1, padding=p1, kernel_initializer=initializer_secondary,
+			strides=s1, use_bias=False)(x)
 		if activation1 == "tanh":
 			x = layers.Activation(activations.tanh)(x)
 		if activation1 == "sigmoid":
@@ -611,11 +611,11 @@ class Model:
 		else:
 			pass
 
-		x = layers.Conv2DTranspose(n2, k2, padding=p2, kernel_initializer=initializer_primary,
-			strides=s2, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
+		x = layers.Conv2DTranspose(n2, k2, padding=p2, kernel_initializer=initializer_primary,
+			strides=s2, use_bias=False)(x)
 		if not use_post_activation:
 			if activation2 == "tanh":
 				x = layers.Activation(activations.tanh)(x)
@@ -647,17 +647,17 @@ class Model:
 		initializer_secondary=initializers.Orthogonal()):
 
 		#shortcut by linear upsampling
-		y = layers.Conv2DTranspose(n2, k, padding=p, strides=s,
-			kernel_initializer=initializer_primary, use_bias=False)(x)
 		y = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
-			gamma_initializer = self.gamma_initializer)(y)
+			gamma_initializer = self.gamma_initializer)(x)
+		y = layers.Conv2DTranspose(n2, k, padding=p, strides=s,
+			kernel_initializer=initializer_primary, use_bias=False)(y)
 
-		x = layers.Conv2DTranspose(n1, k, padding=p, kernel_initializer=initializer_secondary,
-			strides=s, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
+		x = layers.Conv2DTranspose(n1, k, padding=p, kernel_initializer=initializer_secondary,
+			strides=s, use_bias=False)(x)
 		if activation1 == "tanh":
 			x = layers.Activation(activations.tanh)(x)
 		if activation1 == "sigmoid":
@@ -667,11 +667,11 @@ class Model:
 		else:
 			pass
 
-		x = layers.Conv2DTranspose(n2, (1,1), kernel_initializer=initializer_primary,
-			strides=s, use_bias=False)(x)
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
+		x = layers.Conv2DTranspose(n2, (1,1), kernel_initializer=initializer_primary,
+			strides=s, use_bias=False)(x)
 		if not use_post_activation:
 			if activation2 == "tanh":
 				x = layers.Activation(activations.tanh)(x)
