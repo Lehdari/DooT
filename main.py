@@ -60,6 +60,9 @@ def parse_args():
     parser.add_argument('--architecture', type=int,
         help="architecture to use: 1 - default, 2 - wider, 3 - deeper",
         default=1)
+    parser.add_argument('--initializer', type=int,
+        help="architecture to use: 1 - glorot, 2 - normal, 3 - uniform",
+        default=1)
 
     # Currently not used probably
     parser.add_argument('--output-visual-log', action="store_true",
@@ -93,6 +96,7 @@ def main(args):
     learning_rate = args.learning_rate
     momentum = args.momentum
     architecture = args.architecture
+    initializer = args.initializer
 
     if args.log_dir == "":
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -109,7 +113,8 @@ def main(args):
         model_directory=model_dir,
         learning_rate=learning_rate,
         momentum=momentum,
-        architecture=architecture)
+        architecture=architecture,
+        initializer=initializer)
 
     if model_filename is not None:
         if isdir(model_dir):

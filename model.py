@@ -162,13 +162,20 @@ class Model:
 		model_directory="models/model",
 		learning_rate=0.001,
 		momentum=0.9,
-		architecture=1 # 2: wider, 3: deeper
+		architecture=1, # 2: wider, 3: deeper
+		initializer=1, # 2: RandomNormal, 3: RandomUniform
 		):
 		self.model_directory = model_directory
 		
 		self.architecture = architecture # TODO temp, used only for grid search
 
-		self.initializer = initializers.RandomNormal(stddev=0.03)
+		if initializer == 1:
+			self.initializer = initializers.GlorotUniform()
+		elif initializer == 2:
+			self.initializer = initializers.RandomNormal(stddev=0.001)
+		elif initializer == 3:
+			self.initializer = initializers.RandomUniform(minval=-0.001, maxval=0.001)
+
 		self.beta_initializer=initializers.RandomNormal(mean=0.0, stddev=0.0)
 		self.gamma_initializer=initializers.RandomNormal(mean=1.0, stddev=0.0)
 		self.optimizer = keras.optimizers.Adam(learning_rate=learning_rate, beta_1=momentum, beta_2=0.999,
@@ -856,30 +863,54 @@ class Model:
 
 		if self.architecture == 2: # the wider architecture
 			x = self.module_conv(x, 18, 24, k1=(3,2), s1=(3,2), k2=(2,4), s2=(1,2),
-				p1="same", p2="same", activation1="relu", activation2="tanh") # 80x80
+				p1="same", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 80x80
 			x = self.module_conv(x, 24, 24, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				p1="same", p2="same", activation1="relu", activation2="tanh") # 40x40
+				p1="same", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 40x40
 			x = self.module_conv(x, 48, 48, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				p1="same", p2="same", activation1="relu", activation2="tanh") # 20x20
+				p1="same", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 20x20
 			x = self.module_conv(x, 96, 96, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				p1="same", p2="same", activation1="relu", activation2="tanh") # 10x10
+				p1="same", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 10x10
 			x = self.module_conv(x, 192, 192, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				p1="same", p2="same", activation1="relu", activation2="tanh") # 5x5
+				p1="same", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 5x5
 			x = self.module_conv(x, 192, 192, k1=(2,2), s1=(1,1), k2=(1,1), s2=(1,1),
-				p1="valid", p2="same", activation1="relu", activation2="tanh") # 4x4
+				p1="valid", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 4x4
 		else:
 			x = self.module_conv(x, 12, 16, k1=(3,2), s1=(3,2), k2=(2,4), s2=(1,2),
-				p1="same", p2="same", activation1="relu", activation2="tanh") # 80x80
+				p1="same", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 80x80
 			x = self.module_conv(x, 16, 16, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				p1="same", p2="same", activation1="relu", activation2="tanh") # 40x40
+				p1="same", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 40x40
 			x = self.module_conv(x, 32, 32, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				p1="same", p2="same", activation1="relu", activation2="tanh") # 20x20
+				p1="same", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 20x20
 			x = self.module_conv(x, 64, 64, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				p1="same", p2="same", activation1="relu", activation2="tanh") # 10x10
+				p1="same", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 10x10
 			x = self.module_conv(x, 128, 128, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				p1="same", p2="same", activation1="relu", activation2="tanh") # 5x5
+				p1="same", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 5x5
 			x = self.module_conv(x, 128, 128, k1=(2,2), s1=(1,1), k2=(1,1), s2=(1,1),
-				p1="valid", p2="same", activation1="relu", activation2="tanh") # 4x4
+				p1="valid", p2="same", activation1="relu", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 4x4
 
 		x = layers.Conv2D(128, (1,1),
 			kernel_initializer=self.initializer,
@@ -904,87 +935,141 @@ class Model:
 		
 		if self.architecture == 2: # wider architecture
 			x = self.module_deconv_no_upsampling(x, 384, 384, k=(2,2),
-				p="valid", activation1="tanh", activation2="tanh") # 5x5
+				p="valid", activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 5x5
 
 			x = self.module_deconv(x, 384, 192, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				activation1="tanh", activation2="tanh") # 10x10
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 10x10
 			x = self.module_conv(x, 384, 192, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-				activation1="tanh", activation2="tanh")
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer)
 			
 			x = self.module_deconv(x, 192, 96, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				activation1="tanh", activation2="tanh") # 20x20
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 20x20
 			x = self.module_conv(x, 192, 96, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-				activation1="tanh", activation2="tanh")
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer)
 			
 			x = self.module_deconv(x, 96, 48, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				activation1="tanh", activation2="tanh") # 40x40
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 40x40
 			x = self.module_conv(x, 96, 48, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-				activation1="tanh", activation2="tanh")
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer)
 
 			x = self.module_deconv(x, 48, 24, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				activation1="tanh", activation2="tanh") # 80x80
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 80x80
 			x = self.module_conv(x, 48, 24, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-				activation1="tanh", activation2="tanh")
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer)
 
 			x = self.module_deconv(x, 24, 24, k1=(6,4), s1=(3,2), k2=(2,4), s2=(1,2),
-				activation1="tanh", activation2="tanh") # 240x320
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 240x320
 
 		else:
 			x = self.module_deconv_no_upsampling(x, 256, 256, k=(2,2),
-				p="valid", activation1="tanh", activation2="tanh") # 5x5
+				p="valid", activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 5x5
 			if self.architecture == 3: # deeper architecture
 				x = self.module_conv(x, 256, 256, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-					activation1="tanh", activation2="tanh")
+					activation1="tanh", activation2="tanh",
+					initializer_primary=self.initializer,
+					initializer_secondary=self.initializer)
 
 			x = self.module_deconv(x, 256, 128, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				activation1="tanh", activation2="tanh") # 10x10
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 10x10
 			x = self.module_conv(x, 256, 128, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-				activation1="tanh", activation2="tanh")
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer)
 			if self.architecture == 3: # deeper architecture
 				x = self.module_conv(x, 256, 128, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-					activation1="tanh", activation2="tanh")
+					activation1="tanh", activation2="tanh",
+					initializer_primary=self.initializer,
+					initializer_secondary=self.initializer)
 			
 			x = self.module_deconv(x, 128, 64, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				activation1="tanh", activation2="tanh") # 20x20
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 20x20
 			x = self.module_conv(x, 128, 64, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-				activation1="tanh", activation2="tanh")
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer)
 			if self.architecture == 3: # deeper architecture
 				x = self.module_conv(x, 128, 64, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-					activation1="tanh", activation2="tanh")
+					activation1="tanh", activation2="tanh",
+					initializer_primary=self.initializer,
+					initializer_secondary=self.initializer)
 			
 			x = self.module_deconv(x, 64, 32, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				activation1="tanh", activation2="tanh") # 40x40
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 40x40
 			x = self.module_conv(x, 64, 32, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-				activation1="tanh", activation2="tanh")
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer)
 			if self.architecture == 3: # deeper architecture
 				x = self.module_conv(x, 64, 32, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-					activation1="tanh", activation2="tanh")
+					activation1="tanh", activation2="tanh",
+					initializer_primary=self.initializer,
+					initializer_secondary=self.initializer)
 
 			x = self.module_deconv(x, 32, 16, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-				activation1="tanh", activation2="tanh") # 80x80
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 80x80
 			x = self.module_conv(x, 32, 16, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-				activation1="tanh", activation2="tanh")
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer)
 			if self.architecture == 3: # deeper architecture
 				x = self.module_conv(x, 32, 16, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-					activation1="tanh", activation2="tanh")
+					activation1="tanh", activation2="tanh",
+					initializer_primary=self.initializer,
+					initializer_secondary=self.initializer)
 
 			x = self.module_deconv(x, 16, 16, k1=(6,4), s1=(3,2), k2=(2,4), s2=(1,2),
-				activation1="tanh", activation2="tanh") # 240x320
+				activation1="tanh", activation2="tanh",
+				initializer_primary=self.initializer,
+				initializer_secondary=self.initializer) # 240x320
 			if self.architecture == 3: # deeper architecture
 				x = self.module_conv(x, 16, 16, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-					activation1="tanh", activation2="tanh")
+					activation1="tanh", activation2="tanh",
+					initializer_primary=self.initializer,
+					initializer_secondary=self.initializer)
 
 		y = self.module_conv(x, 8, 1, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
 			activation1="tanh", activation2="sigmoid", use_post_activation=True,
-			initializer_primary=initializers.Orthogonal(0.01)) # luminosity
+			initializer_primary=self.initializer,
+			initializer_secondary=self.initializer) # luminosity
 
 		x = self.module_conv(x, 8, 2, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
 			activation1="tanh", activation2="sigmoid", use_post_activation=True,
-			initializer_primary=initializers.Orthogonal(0.01)) - 0.5 # chromaticity
+			initializer_primary=self.initializer,
+			initializer_secondary=self.initializer) - 0.5 # chromaticity
 
 		self.model_image_decoder_o_image = layers.Concatenate()([y, x])
 		self.model_image_decoder_o_depth = layers.Conv2D(1, (1, 1),
-			kernel_initializer=initializers.Orthogonal(0.1),
+			kernel_initializer=self.initializer,
 			activation="linear")(x) # depth TODO change to module_conv
 
 		self.model_image_decoder = keras.Model(
