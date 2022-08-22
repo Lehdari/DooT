@@ -1013,17 +1013,24 @@ class Model:
 	def create_image_decoder_model(self, feature_multiplier=1):
 		self.model_image_decoder_i_image_enc = keras.Input(shape=(self.image_enc_size))
 
-		x = layers.Reshape((4, 4, -1))(self.model_image_decoder_i_image_enc)
+		x = self.model_image_decoder_i_image_enc
+		if self.architecture == 3:
+			x = layers.BatchNormalization(axis=-1,
+				beta_initializer = self.beta_initializer,
+				gamma_initializer = self.gamma_initializer)(x)
+			x = layers.Dense(2048, kernel_initializer=self.initializer, use_bias=False)(x)
+			x = layers.Activation(activations.tanh)(x)
+
+		x = layers.Reshape((4, 4, -1))(x)
 		
 		x = self.module_deconv_no_upsampling(x, 256, 256, k=(2,2),
 			p="valid", activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer) # 5x5
-		if self.architecture == 3: # deeper architecture
-			x = self.module_conv(x, 256, 256, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-				activation1="tanh", activation2="tanh",
-				initializer_primary=self.initializer,
-				initializer_secondary=self.initializer)
+		x = self.module_conv(x, 256, 256, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+			activation1="tanh", activation2="tanh",
+			initializer_primary=self.initializer,
+			initializer_secondary=self.initializer)
 
 		x = self.module_deconv(x, 256, 128, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
 			activation1="tanh", activation2="tanh",
