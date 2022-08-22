@@ -435,13 +435,15 @@ class Model:
 				image_combined_pred = layers.Concatenate()([image_pred, depth_pred])
 				
 				image_loss = ImageLoss(image_combined, image_combined_pred)
-				loss_total = image_loss.total_loss()
+				loss_regularizer = self.model_image_encoder.losses
+				loss_regularizer += self.model_image_decoder.losses
+				loss_total = image_loss.total_loss() + loss_regularizer
 
 			g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
 			g_model_image_decoder = gt.gradient(loss_total, self.model_image_decoder.trainable_variables)
 
 			return image_pred, depth_pred, g_model_image_encoder, g_model_image_decoder,\
-				loss_total
+				loss_total, loss_regularizer
 
 		self.train_image_encoder_model = train_image_encoder_model
 		self.train_backbone_inverse = train_backbone_inverse
@@ -1333,15 +1335,17 @@ class Model:
 			# unused
 			# state_prev = state_init
 			loss_total = 0.0
+			loss_regularizer = 0.0
 			double_edec_loss = 0.0
 			g_model_image_encoder = None
 			g_model_image_decoder = None
 			n_iters = 0
 			for i in range(self.replay_sample_length):
 				image_pred, depth_pred, gi_model_image_encoder, gi_model_image_decoder,\
-					loss_total_tf = self.train_autoencoder(images, tf.convert_to_tensor(i))
+					loss_total_tf, loss_regularizer_tf = self.train_autoencoder(images, tf.convert_to_tensor(i))
 				
-				loss_total += loss_total_tf.numpy()
+				loss_total += sum([l.numpy() for l in loss_total_tf]) / len(loss_total_tf)
+				loss_regularizer += sum([l.numpy() for l in loss_regularizer_tf]) / len(loss_regularizer_tf)
 				
 				if g_model_image_encoder is None:
 					g_model_image_encoder = gi_model_image_encoder
@@ -1365,9 +1369,10 @@ class Model:
 					double_edec_loss += metrics.double_edec_loss(self.model_image_encoder,
 					self.model_image_decoder, image_target, image_target_combined, automap)
 
-					print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_edec: {:8.5f}\r".format(
+					print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_edec: {:8.5f}\r".format(
 						e, i, self.replay_sample_length,
 						loss_total/n_iters,
+						loss_regularizer/n_iters,
 						double_edec_loss/n_iters), end=" ")
 						
 					image_loss = ImageLoss(image, image_pred_stacked)
