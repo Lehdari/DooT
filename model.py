@@ -731,7 +731,7 @@ class Model:
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(g1)
 		g1 = layers.Dense(n,
-			kernel_initializer=initializers.Orthogonal(1.0),
+			kernel_initializer=initializer,
 			use_bias=False, activation="sigmoid")(g1)
 		g2 = layers.Lambda(lambda x: 1.0 - x)(g1)
 
@@ -739,7 +739,7 @@ class Model:
 		x1 = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x1)
-		x1 = layers.Dense(n, kernel_initializer=initializers.Orthogonal(1.0), use_bias=False)(x1)
+		x1 = layers.Dense(n, kernel_initializer=initializer, use_bias=False)(x1)
 		if activation == "tanh":
 			x1 = layers.Activation(activations.tanh)(x1)
 		elif activation == "relu":
@@ -750,7 +750,7 @@ class Model:
 		x2 = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x2)
-		x2 = layers.Dense(n, kernel_initializer=initializers.Orthogonal(1.0), use_bias=False)(x2)
+		x2 = layers.Dense(n, kernel_initializer=initializer, use_bias=False)(x2)
 		if activation == "tanh":
 			x2 = layers.Activation(activations.tanh)(x2)
 		elif activation == "relu":
