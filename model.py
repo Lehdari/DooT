@@ -901,7 +901,7 @@ class Model:
 				initializer_secondary=self.initializer) # 4x4
 			x = layers.Conv2D(128, (1,1),
 				kernel_initializer=self.initializer,
-				activity_regularizer=L2Regularizer(1.0e-6))(x)
+				activity_regularizer=L2Regularizer(1.0e-5))(x)
 			self.model_image_encoder_o_image_enc = layers.Flatten()(x)
 
 		elif self.architecture == 2: # the wider architecture
@@ -933,7 +933,7 @@ class Model:
 				initializer_secondary=self.initializer) # 4x4
 			x = layers.Conv2D(128, (1,1),
 				kernel_initializer=self.initializer,
-				activity_regularizer=L2Regularizer(1.0e-6))(x)
+				activity_regularizer=L2Regularizer(1.0e-5))(x)
 			self.model_image_encoder_o_image_enc = layers.Flatten()(x)
 
 		else: # the split architecture
@@ -964,7 +964,7 @@ class Model:
 				initializer_secondary=self.initializer) # 4x4
 			x = layers.Conv2D(64, (1,1),
 				kernel_initializer=self.initializer,
-				activity_regularizer=L2Regularizer(1.0e-6))(x)
+				activity_regularizer=L2Regularizer(1.0e-5))(x)
 			x = layers.Flatten()(x)
 
 			y = self.module_conv(self.model_image_encoder_i_automap,
@@ -994,7 +994,7 @@ class Model:
 				initializer_secondary=self.initializer) # 4x4
 			y = layers.Conv2D(32, (1,1),
 				kernel_initializer=self.initializer,
-				activity_regularizer=L2Regularizer(1.0e-6))(y)
+				activity_regularizer=L2Regularizer(1.0e-5))(y)
 			y = layers.Flatten()(y)
 
 			z = self.module_fusion(x, y, 512, initializer=self.initializer)
