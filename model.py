@@ -962,7 +962,7 @@ class Model:
 				p1="valid", p2="same", activation1="relu", activation2="tanh",
 				initializer_primary=self.initializer,
 				initializer_secondary=self.initializer) # 4x4
-			x = layers.Conv2D(64, (1,1),
+			x = layers.Conv2D(96, (1,1),
 				kernel_initializer=self.initializer,
 				activity_regularizer=L2Regularizer(1.0e-5))(x)
 			x = layers.Flatten()(x)
@@ -997,8 +997,8 @@ class Model:
 				activity_regularizer=L2Regularizer(1.0e-5))(y)
 			y = layers.Flatten()(y)
 
-			z = self.module_fusion(x, y, 512, initializer=self.initializer)
-			self.model_image_encoder_o_image_enc = layers.Concatenate()([x, y, z])
+			y = self.module_fusion(x, y, 512, initializer=self.initializer)
+			self.model_image_encoder_o_image_enc = layers.Concatenate()([x, y])
 
 		self.model_image_encoder = keras.Model(
 			inputs=[
