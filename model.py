@@ -1027,20 +1027,33 @@ class Model:
 			p="valid", activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer) # 5x5
-		x = self.module_conv(x, 256, 256, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+		x = self.module_conv(x, 256, 256, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer)
 
-		x = self.module_deconv(x, 256, 128, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+		x = self.module_deconv(x, 512, 256, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer) # 10x10
-		x = self.module_conv(x, 256, 128, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+		x = self.module_conv(x, 256, 256, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer)
-		x = self.module_conv(x, 256, 128, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+		x = self.module_conv(x, 256, 256, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
+			activation1="tanh", activation2="tanh",
+			initializer_primary=self.initializer,
+			initializer_secondary=self.initializer)
+		
+		x = self.module_deconv(x, 256, 128, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
+			activation1="tanh", activation2="tanh",
+			initializer_primary=self.initializer,
+			initializer_secondary=self.initializer) # 20x20
+		x = self.module_conv(x, 128, 128, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
+			activation1="tanh", activation2="tanh",
+			initializer_primary=self.initializer,
+			initializer_secondary=self.initializer)
+		x = self.module_conv(x, 128, 128, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer)
@@ -1048,47 +1061,38 @@ class Model:
 		x = self.module_deconv(x, 128, 64, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
-			initializer_secondary=self.initializer) # 20x20
-		x = self.module_conv(x, 128, 64, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+			initializer_secondary=self.initializer) # 40x40
+		x = self.module_conv(x, 64, 64, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer)
-		x = self.module_conv(x, 128, 64, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+		x = self.module_conv(x, 64, 64, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer)
-		
+
 		x = self.module_deconv(x, 64, 32, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
-			initializer_secondary=self.initializer) # 40x40
-		x = self.module_conv(x, 64, 32, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-			activation1="tanh", activation2="tanh",
-			initializer_primary=self.initializer,
-			initializer_secondary=self.initializer)
-		x = self.module_conv(x, 64, 32, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
-			activation1="tanh", activation2="tanh",
-			initializer_primary=self.initializer,
-			initializer_secondary=self.initializer)
-
-		x = self.module_deconv(x, 32, 16, k1=(4,4), s1=(2,2), k2=(2,2), s2=(1,1),
-			activation1="tanh", activation2="tanh",
-			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer) # 80x80
-		x = self.module_conv(x, 32, 16, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+		x = self.module_conv(x, 32, 32, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer)
-		x = self.module_conv(x, 32, 16, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+		x = self.module_conv(x, 32, 32, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer)
 
-		x = self.module_deconv(x, 16, 16, k1=(6,4), s1=(3,2), k2=(2,4), s2=(1,2),
+		x = self.module_deconv(x, 32, 32, k1=(6,4), s1=(3,2), k2=(2,4), s2=(1,2),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer) # 240x320
-		x = self.module_conv(x, 16, 16, k1=(3,3), s1=(1,1), k2=(1,1), s2=(1,1),
+		x = self.module_conv(x, 32, 32, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
+			activation1="tanh", activation2="tanh",
+			initializer_primary=self.initializer,
+			initializer_secondary=self.initializer)
+		x = self.module_conv(x, 32, 32, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
 			activation1="tanh", activation2="tanh",
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer)
