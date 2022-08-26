@@ -197,8 +197,8 @@ class Model:
 		self.replay_sample_length = replay_sample_length
 		self.output_visual_log = output_visual_log
 
-		self.create_image_encoder_model(feature_multiplier=2)
-		self.create_image_decoder_model(feature_multiplier=2)
+		self.create_image_encoder_model()
+		self.create_image_decoder_model()
 
 		# self.create_state_model()
 		# self.create_reward_model()
@@ -868,7 +868,7 @@ class Model:
 		return tf.constant(xyr)
 
 
-	def create_image_encoder_model(self, feature_multiplier=1):
+	def create_image_encoder_model(self):
 		self.model_image_encoder_i_image = keras.Input(shape=(240, 320, 3))
 		self.model_image_encoder_i_automap = keras.Input(shape=(240, 320, 1))
 
@@ -1010,7 +1010,7 @@ class Model:
 		# self.model_image_encoder.summary()
 
 
-	def create_image_decoder_model(self, feature_multiplier=1):
+	def create_image_decoder_model(self):
 		self.model_image_decoder_i_image_enc = keras.Input(shape=(self.image_enc_size))
 
 		x = self.model_image_decoder_i_image_enc
