@@ -9,17 +9,17 @@ class ImageLoss:
     def __init__ (self, image, image_pred,
         weight_matrix=[
             # columns: lumacity, chromacity Cb, chromacity Cr, depth
-            [1.0, 0.5, 0.5, 1.0], # original image
-            [2.0, 1.0, 1.0, 4.0], # gradient 1
-            [2.0, 1.0, 1.0, 4.0], # gradient 2
-            [2.0, 1.0, 1.0, 4.0], # gradient 4
-            [2.0, 1.0, 1.0, 4.0], # gradient 8
-            [2.0, 1.0, 1.0, 4.0], # gradient 16
-            [4.0, 2.0, 2.0, 2.0], # laplacian 1
-            [4.0, 2.0, 2.0, 2.0], # laplacian 2
-            [4.0, 2.0, 2.0, 2.0], # laplacian 4
-            [4.0, 2.0, 2.0, 2.0], # laplacian 8
-            [4.0, 2.0, 2.0, 2.0], # laplacian 16
+            [1.0, 0.25, 0.25, 1.0], # original image
+            [3.0, 0.5, 0.5, 4.0], # gradient 1
+            [3.0, 0.5, 0.5, 4.0], # gradient 2
+            [3.0, 0.5, 0.5, 4.0], # gradient 4
+            [3.0, 0.5, 0.5, 4.0], # gradient 8
+            [3.0, 0.5, 0.5, 4.0], # gradient 16
+            [6.0, 1.0, 1.0, 2.0], # laplacian 1
+            [6.0, 1.0, 1.0, 2.0], # laplacian 2
+            [6.0, 1.0, 1.0, 2.0], # laplacian 4
+            [6.0, 1.0, 1.0, 2.0], # laplacian 8
+            [6.0, 1.0, 1.0, 2.0], # laplacian 16
         ],
         mask_hud=True,
         n_levels=1 # number of laplacian and gradient layers to use
