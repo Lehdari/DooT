@@ -672,7 +672,7 @@ class Model:
 		x = layers.BatchNormalization(axis=-1,
 			beta_initializer = self.beta_initializer,
 			gamma_initializer = self.gamma_initializer)(x)
-		x = layers.Conv2DTranspose(n2, (1,1), kernel_initializer=initializer_primary,
+		x = layers.Conv2D(n2, (1,1), kernel_initializer=initializer_primary,
 			strides=s, use_bias=False)(x)
 		if not use_post_activation:
 			if activation2 == "tanh":
