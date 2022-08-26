@@ -1015,16 +1015,19 @@ class Model:
 
 		x = self.model_image_decoder_i_image_enc
 		if self.architecture == 3:
-			x = layers.BatchNormalization(axis=-1,
-				beta_initializer = self.beta_initializer,
-				gamma_initializer = self.gamma_initializer)(x)
-			x = layers.Dense(2048, kernel_initializer=self.initializer, use_bias=False)(x)
-			x = layers.Activation(activations.tanh)(x)
+			# extract and redistribute both encoding split sections separately
+			x = layers.Reshape((4, 4, 32))(x[:,1536:2048]) 
 
-		x = layers.Reshape((4, 4, -1))(x)
+			y = self.model_image_decoder_i_image_enc
+			y = layers.Reshape((4, 4, 96))(y[:,0:1536]) 
+
+			x = layers.Concatenate()([x, y])
+
+		else:
+			x = layers.Reshape((4, 4, -1))(x)
 		
-		x = self.module_deconv_no_upsampling(x, 256, 256, k=(2,2),
-			p="valid", activation1="tanh", activation2="tanh",
+		x = self.module_deconv_no_upsampling(x, 512, 256, k=(2,2),
+			p="valid", activation1="tanh", activation2="tanh", use_post_activation=True,
 			initializer_primary=self.initializer,
 			initializer_secondary=self.initializer) # 5x5
 		x = self.module_conv(x, 256, 256, k1=(3,1), s1=(1,1), k2=(1,3), s2=(1,1),
