@@ -840,18 +840,24 @@ class Model:
 		return x
 
 
-	def create_positional_embedding(self, shape, n):
-		x, y = tf.meshgrid(
-			tf.linspace(-shape[1]+0.5, shape[1]-0.5, shape[1]),
-			tf.linspace(-shape[0]+0.5, shape[0]-0.5, shape[0])
+	@staticmethod
+	def module_positional_embedding(x, n):
+		shape = x.get_shape().as_list()
+
+		x_mesh, y_mesh = tf.meshgrid(
+			tf.linspace(-shape[2]//2+0.5, shape[2]//2-0.5, shape[2]),
+			tf.linspace(-shape[1]//2+0.5, shape[1]//2-0.5, shape[1])
 		)
 
 		emb_list = []
 		for i in range(n):
-			emb_list.append(tf.sin(x/((2**i)/np.pi)))
-			emb_list.append(tf.sin(y/((2**i)/np.pi)))
+			emb_list.append(tf.sin((x_mesh*np.pi)/(2**i)))
+			emb_list.append(tf.sin((y_mesh*np.pi)/(2**i)))
 
-		return tf.constant(tf.stack(emb_list, axis=2))
+		e = tf.broadcast_to(tf.expand_dims(tf.constant(tf.stack(emb_list, axis=2)), 0),
+			[tf.shape(x)[0], shape[1], shape[2], n*2])
+		
+		return layers.Concatenate()([x, e])
 
 
 	def create_positional_embedding_mesh(self, shape):
