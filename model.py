@@ -199,6 +199,7 @@ class Model:
 
 		self.create_image_encoder_model()
 		self.create_image_decoder_model()
+		self.create_image_advance_model()
 
 		# self.create_state_model()
 		# self.create_reward_model()
@@ -422,28 +423,52 @@ class Model:
 		
 		@tf.function(input_signature=[
 			tf.TensorSpec(shape=(self.replay_sample_length, 8, 240, 320, 5), dtype=tf.float32),
+			tf.TensorSpec(shape=(8, self.image_enc_size), dtype=tf.float32),
 			tf.TensorSpec(shape=(), dtype=tf.int32)
 		])
-		def train_autoencoder(images, i):
+		def train_autoencoder(images, image_enc_prev, i):
 			with tf.GradientTape(persistent=True) as gt:
 				image = images[i][:,:,:,1:4]
 				automap = images[i][:,:,:,0:1]
 				image_enc = self.model_image_encoder([image, automap], training=True)
 				image_pred, depth_pred = self.model_image_decoder(image_enc, training=True)
 
+				if i > 0:
+					image_full_prev = images[i-1][:,:,:,1:5]
+					image_full_pred_advance, image_flow_advance = self.model_image_advance([
+						image_full_prev, image_enc_prev, image_enc], training=True)
+				else:
+					image_full_pred_advance = images[i][:,:,:,1:5]
+					image_flow_advance = images[i][:,:,:,0:2]
+				
+				flow_loss_mask = tf.where(image_full_pred_advance[:,:,:,3:4] > 0.001,
+					tf.ones_like(image_full_pred_advance[:,:,:,3:4]),
+					tf.zeros_like(image_full_pred_advance[:,:,:,3:4])) *\
+					tf.cast(tf.where(images[i][:,:,:,4:5] > 0.001,
+					tf.ones_like(images[i][:,:,:,4:5]),
+					tf.zeros_like(images[i][:,:,:,4:5])), tf.float32)
+				loss_image_flow = tf.reduce_sum(ImageLoss.image_loss(
+					images[i][:,:,:,1:5], image_full_pred_advance, flow_loss_mask)) * 4.0 # TODO temp multiplier
+				
 				image_combined = images[i][:,:,:,1:]
 				image_combined_pred = layers.Concatenate()([image_pred, depth_pred])
 				
 				image_loss = ImageLoss(image_combined, image_combined_pred)
-				loss_regularizer = self.model_image_encoder.losses
-				loss_regularizer += self.model_image_decoder.losses
-				loss_total = image_loss.total_loss() + loss_regularizer
+				loss_regularizer = tf.reduce_sum(self.model_image_encoder.losses)
+				loss_regularizer += tf.reduce_sum(self.model_image_decoder.losses)
+				loss_total =\
+					image_loss.total_loss() +\
+					loss_regularizer +\
+					loss_image_flow
 
 			g_model_image_encoder = gt.gradient(loss_total, self.model_image_encoder.trainable_variables)
 			g_model_image_decoder = gt.gradient(loss_total, self.model_image_decoder.trainable_variables)
+			g_model_image_advance = gt.gradient(loss_total, self.model_image_advance.trainable_variables)
 
-			return image_pred, depth_pred, g_model_image_encoder, g_model_image_decoder,\
-				loss_total, loss_regularizer
+			return image_enc,\
+				image_pred, depth_pred, image_full_pred_advance, image_flow_advance,\
+				g_model_image_encoder, g_model_image_decoder, g_model_image_advance,\
+				loss_total, loss_regularizer, loss_image_flow
 
 		self.train_image_encoder_model = train_image_encoder_model
 		self.train_backbone_inverse = train_backbone_inverse
@@ -1132,6 +1157,104 @@ class Model:
 		# self.model_image_decoder.summary()
 
 
+	def create_image_advance_model(self):
+		self.model_image_advance_i_image_depth_prev = keras.Input(shape=(240, 320, 4))
+		self.model_image_advance_i_image_enc_prev = keras.Input(shape=(self.image_enc_size))
+		self.model_image_advance_i_image_enc = keras.Input(shape=(self.image_enc_size))
+
+		batch_size = tf.shape(self.model_image_advance_i_image_depth_prev)[0]
+		w = self.model_image_advance_i_image_depth_prev.get_shape().as_list()[2]
+		h = self.model_image_advance_i_image_depth_prev.get_shape().as_list()[1]
+
+		x = layers.Subtract()([
+			self.model_image_advance_i_image_enc, self.model_image_advance_i_image_enc_prev])
+		
+		x = layers.Reshape((2048,1))(x)
+		x = layers.AveragePooling1D(4)(x)
+		x = layers.Reshape((512,))(x)
+		y = x
+
+		x = layers.BatchNormalization(axis=-1,
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(x)
+		x = layers.Dense(128, kernel_initializer=self.initializer, use_bias=False)(x)
+		x = layers.Activation(activations.tanh)(x)
+
+		y = layers.Reshape((512,1))(y)
+		y = layers.AveragePooling1D(4)(y)
+		y = layers.Reshape((128,))(y)
+		x = layers.Add()([x, y])
+		y = x
+
+		x = layers.BatchNormalization(axis=-1,
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(x)
+		x = layers.Dense(32, kernel_initializer=self.initializer, use_bias=False)(x)
+		x = layers.Activation(activations.tanh)(x)
+
+		y = layers.Reshape((128,1))(y)
+		y = layers.AveragePooling1D(4)(y)
+		y = layers.Reshape((32,))(y)
+		x = layers.Add()([x, y])
+
+		x = layers.BatchNormalization(axis=-1,
+			beta_initializer = self.beta_initializer,
+			gamma_initializer = self.gamma_initializer)(x)
+		x = layers.Dense(12, kernel_initializer=initializers.GlorotNormal(), use_bias=False)(x)
+
+		# Use learned parameters to project depth into flow map
+		depth = self.model_image_advance_i_image_depth_prev[:,:,:,3:4]
+		f = 1.0 # focal length
+		px, py = tf.meshgrid(tf.linspace(-1.0, 1.0, w), tf.linspace(-0.75, 0.75, h))
+		px = tf.expand_dims(tf.expand_dims(px, axis=0), axis=3)
+		py = tf.expand_dims(tf.expand_dims(py, axis=0), axis=3)
+		pxy = tf.concat([
+			tf.broadcast_to(px, [batch_size, h, w, 1]),
+			tf.broadcast_to(py, [batch_size, h, w, 1])
+		], axis=3)
+		# backproject screen points using depth image
+		p = depth * tf.concat([
+			pxy / f,
+			tf.broadcast_to(tf.ones_like(px), [batch_size, h, w, 1])
+			], axis=3)
+		# add homogeneous 1
+		p = tf.concat([p, tf.broadcast_to(tf.ones_like(px), [batch_size, h, w, 1])], axis=3)
+		# create transformation matrix
+		t = tf.concat(
+			[tf.reshape(x, [batch_size, 3, 4]),
+			tf.broadcast_to(tf.constant([[[0.0, 0.0, 0.0, 0.0]]]), [batch_size, 1, 4])],
+			axis=1)
+		t = t+tf.broadcast_to(tf.constant([[
+			[1.0, 0.0, 0.0, 0.0],
+			[0.0, 1.0, 0.0, 0.0],
+			[0.0, 0.0, 1.0, 0.0],
+			[0.0, 0.0, 0.0, 1.0]
+		]]), [batch_size, 4, 4])
+		t = tf.expand_dims(tf.expand_dims(t, axis=1), axis=1)
+		# reproject
+		p2 = tf.linalg.matvec(t, p)
+		pxy2 = (p2[:,:,:,0:2] / (tf.nn.relu(p2[:,:,:,2:3])+ 1.0e-8)) * f
+		mask = tf.where(p2[:,:,:,2:3] > 0.0,
+			tf.ones_like(p2[:,:,:,2:3]), tf.zeros_like(p2[:,:,:,2:3]))
+		pxy2 = pxy2*mask
+		flow = pxy2-pxy
+
+		self.model_image_advance_o_image = tf.keras.layers.Lambda(
+			lambda a: tfa.image.dense_image_warp(a[0], a[1]))(
+			(self.model_image_advance_i_image_depth_prev, flow))
+		self.model_image_advance_o_flow = flow
+
+		self.model_image_advance = keras.Model(
+			inputs=[
+				self.model_image_advance_i_image_depth_prev,
+				self.model_image_advance_i_image_enc_prev,
+				self.model_image_advance_i_image_enc],
+			outputs=[self.model_image_advance_o_image,
+				self.model_image_advance_o_flow],
+			name="model_image_advance")
+		# self.model_image_advance.summary()
+
+
 	def create_state_model(self):
 		self.model_state_i_state = keras.Input(shape=(self.state_size))
 		self.model_state_i_image_enc = keras.Input(shape=(self.image_enc_size))
@@ -1356,16 +1479,23 @@ class Model:
 			# state_prev = state_init
 			loss_total = 0.0
 			loss_regularizer = 0.0
+			loss_image_flow = 0.0
 			double_edec_loss = 0.0
 			g_model_image_encoder = None
 			g_model_image_decoder = None
+			g_model_image_advance = None
 			n_iters = 0
+			image_enc_prev = tf.zeros_like(self.model_image_encoder(
+				[images[0][:,:,:,1:4], images[0][:,:,:,0:1]], training=False))
 			for i in range(self.replay_sample_length):
-				image_pred, depth_pred, gi_model_image_encoder, gi_model_image_decoder,\
-					loss_total_tf, loss_regularizer_tf = self.train_autoencoder(images, tf.convert_to_tensor(i))
+				image_enc_prev, image_pred, depth_pred, image_full_pred_advance, image_flow_advance,\
+				gi_model_image_encoder, gi_model_image_decoder, gi_model_image_advance,\
+				loss_total_tf, loss_regularizer_tf, loss_image_flow_tf =\
+				self.train_autoencoder(images, image_enc_prev, tf.convert_to_tensor(i))
 				
-				loss_total += sum([l.numpy() for l in loss_total_tf]) / len(loss_total_tf)
-				loss_regularizer += sum([l.numpy() for l in loss_regularizer_tf]) / len(loss_regularizer_tf)
+				loss_total += loss_total_tf.numpy()
+				loss_regularizer += loss_regularizer_tf.numpy()
+				loss_image_flow += loss_image_flow_tf.numpy()
 				
 				if g_model_image_encoder is None:
 					g_model_image_encoder = gi_model_image_encoder
@@ -1377,6 +1507,11 @@ class Model:
 				else:
 					g_model_image_decoder = [a+b for a,b in zip(g_model_image_decoder, gi_model_image_decoder)]
 
+				if g_model_image_advance is None:
+					g_model_image_advance = gi_model_image_advance
+				else:
+					g_model_image_advance = [a+b for a,b in zip(g_model_image_advance, gi_model_image_advance)]
+
 				n_iters += 1
 				if not self.quiet:
 					image = images[i][:,:,:,1:]
@@ -1386,23 +1521,28 @@ class Model:
 					image_target = images[i][:,:,:,1:4]
 					automap = images[i][:,:,:,0:1]
 					image_target_combined = images[i][:,:,:,1:]
-					double_edec_loss += metrics.double_edec_loss(self.model_image_encoder,
-					self.model_image_decoder, image_target, image_target_combined, automap)
+					# double_edec_loss += metrics.double_edec_loss(self.model_image_encoder,
+					# 	self.model_image_decoder, image_target, image_target_combined, automap)
 
-					print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_edec: {:8.5f}\r".format(
+					print("Epoch {:3d} - Training autoenc. model ({}/{}) l_t: {:8.5f} l_r: {:8.5f} l_f: {:8.5f} l_edec: {:8.5f}\r".format(
 						e, i, self.replay_sample_length,
 						loss_total/n_iters,
 						loss_regularizer/n_iters,
+						loss_image_flow/n_iters,
 						double_edec_loss/n_iters), end=" ")
 						
 					image_loss = ImageLoss(image, image_pred_stacked)
 					cv2.imshow("mask", image_loss.loss_mask[e%self.n_replay_episodes].numpy())
 					cv2.imshow("mask_gradient", image_loss.loss_mask_gradient[e%self.n_replay_episodes].numpy())
+					flow = tf.concat([image_flow_advance[e%self.n_replay_episodes],
+						tf.zeros_like(image_flow_advance[e%self.n_replay_episodes,:,:,0:1])], axis=2) * 0.025 + 0.5
+					cv2.imshow("flow", flow.numpy())
+					
 					# print(tf.math.multiply(image_loss.losses, image_loss.weight_matrix).numpy())
 
 					yuv_target = image[e%self.n_replay_episodes,:,:,0:3]
 					yuv_pred = image_pred_stacked[e%self.n_replay_episodes,:,:,0:3]
-					show_frame_comparison_all(yuv_to_rgb(yuv_target),
+					show_frame_comparison(yuv_to_rgb(yuv_target),
 						yuv_to_rgb(yuv_pred),
 						"rgb")
 
@@ -1411,6 +1551,11 @@ class Model:
 						image_pred_stacked[e%self.n_replay_episodes,:,:,3:4],
 						"depth"
 					)
+
+					if i > 0:
+						show_frame_comparison(yuv_to_rgb(yuv_target),
+						yuv_to_rgb(image_full_pred_advance[e%self.n_replay_episodes,:,:,0:3]),
+						"rgb_flow")
 					cv2.waitKey(1)
 
 			if not self.quiet:
@@ -1429,6 +1574,8 @@ class Model:
 				self.model_image_encoder.trainable_variables))
 			self.optimizer.apply_gradients(zip(g_model_image_decoder,
 				self.model_image_decoder.trainable_variables))
+			self.optimizer.apply_gradients(zip(g_model_image_advance,
+				self.model_image_advance.trainable_variables))
 
 			branch = str(self.repo.commit('HEAD'))
 			print("branch:", branch)
@@ -1490,6 +1637,7 @@ class Model:
 		print("Saving model with prefix: {}/{}".format(folder_name, model_name))
 		self.model_image_encoder.save_weights("{}/{}_image_encoder.h5".format(folder_name, model_name))
 		self.model_image_decoder.save_weights("{}/{}_image_decoder.h5".format(folder_name, model_name))
+		self.model_image_advance.save_weights("{}/{}_image_advance.h5".format(folder_name, model_name))
 		# self.model_state.save_weights("{}/{}_state.h5".format(folder_name, model_name))
 		# for i in range(self.n_replay_episodes):
 		# 	self.models_action[i].save("{}/{}_action_{}.h5".format(folder_name, model_name, i))
@@ -1519,6 +1667,9 @@ class Model:
 		self.load_with_backup(self.model_image_decoder,
 			"{}/{}_image_decoder.h5".format(folder_name, model_name),
 			"{}_backup/{}_image_decoder.h5".format(folder_name, model_name))
+		self.load_with_backup(self.model_image_advance,
+			"{}/{}_image_advance.h5".format(folder_name, model_name),
+			"{}_backup/{}_image_advance.h5".format(folder_name, model_name))
 		# self.load_with_backup(self.model_state,
 		# 	"{}/{}_state.h5".format(folder_name, model_name),
 		# 	"{}_backup/{}_state.h5".format(folder_name, model_name))
