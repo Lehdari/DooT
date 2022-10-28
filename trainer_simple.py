@@ -41,6 +41,9 @@ class TrainerSimple(TrainerInterface):
         # self.epsilon += np.random.normal(scale=1.0/128)
         # self.epsilon = np.clip(self.epsilon, 0.0, 1.0)
 
+        # TEMP: no attack for now
+        action[0] = -0.9
+
         return action
 
     def pick_top_replay_entries(self):

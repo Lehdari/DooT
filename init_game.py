@@ -45,10 +45,10 @@ def init_game(episode_length, window_visible):
     game.set_sectors_info_enabled(False)
 
     # Sets other rendering options (all of these options except crosshair are enabled (set to True) by default)
-    game.set_render_hud(True)
-    game.set_render_minimal_hud(True)  # If hud is enabled
+    game.set_render_hud(False)
+    game.set_render_minimal_hud(False)  # If hud is enabled
     game.set_render_crosshair(False)
-    game.set_render_weapon(True)
+    game.set_render_weapon(False)
     game.set_render_decals(False)  # Bullet holes and blood on the walls
     game.set_render_particles(False)
     game.set_render_effects_sprites(False)  # Smoke and blood
